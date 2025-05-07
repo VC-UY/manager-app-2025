@@ -1,0 +1,152 @@
+INFO 2025-04-25 05:43:58,510 task_splitter 421877 127238404048448 Découpage du workflow ffd32acf-6871-457e-b73e-d8751bb7c42c de type TEXT_PROCESSING
+ERROR 2025-04-25 05:43:58,527 task_splitter 421877 127238404048448 Erreur lors du découpage du workflow ffd32acf-6871-457e-b73e-d8751bb7c42c: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 05:44:09,344 task_splitter 421877 127238404048448 Découpage du workflow ffd32acf-6871-457e-b73e-d8751bb7c42c de type TEXT_PROCESSING
+ERROR 2025-04-25 05:44:09,362 task_splitter 421877 127238404048448 Erreur lors du découpage du workflow ffd32acf-6871-457e-b73e-d8751bb7c42c: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 05:55:09,603 task_splitter 421877 127238404048448 Découpage du workflow ffd32acf-6871-457e-b73e-d8751bb7c42c de type TEXT_PROCESSING
+ERROR 2025-04-25 05:55:09,624 task_splitter 421877 127238404048448 Erreur lors du découpage du workflow ffd32acf-6871-457e-b73e-d8751bb7c42c: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 07:20:21,623 task_splitter 421877 127238372591168 Découpage du workflow 085913ff-b110-49ca-83b4-cde8b79cf612 de type TEXT_PROCESSING
+ERROR 2025-04-25 07:20:21,642 task_splitter 421877 127238372591168 Erreur lors du découpage du workflow 085913ff-b110-49ca-83b4-cde8b79cf612: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 07:21:59,732 task_splitter 455417 125808637118016 Découpage du workflow 7771023f-ca52-4803-8062-67fdf408fa29 de type PDF_GENERATION
+ERROR 2025-04-25 07:21:59,755 task_splitter 455417 125808637118016 Erreur lors du découpage du workflow 7771023f-ca52-4803-8062-67fdf408fa29: Type de workflow non supporté: PDF_GENERATION
+INFO 2025-04-25 07:22:00,802 task_splitter 455417 125808637118016 Découpage du workflow 7771023f-ca52-4803-8062-67fdf408fa29 de type PDF_GENERATION
+ERROR 2025-04-25 07:22:00,821 task_splitter 455417 125808637118016 Erreur lors du découpage du workflow 7771023f-ca52-4803-8062-67fdf408fa29: Type de workflow non supporté: PDF_GENERATION
+INFO 2025-04-25 07:28:38,089 task_splitter 458263 138247634159168 Découpage du workflow 814f4df2-56ea-467f-ab69-fbab71f7f450 de type HASH_CALCULATION
+ERROR 2025-04-25 07:28:38,107 task_splitter 458263 138247634159168 Erreur lors du découpage du workflow 814f4df2-56ea-467f-ab69-fbab71f7f450: Type de workflow non supporté: HASH_CALCULATION
+INFO 2025-04-25 08:03:58,699 task_splitter 463912 134949480957504 Découpage du workflow 2b095703-8671-44c0-9493-0529e84e5345 de type TEXT_PROCESSING
+ERROR 2025-04-25 08:03:58,721 task_splitter 463912 134949480957504 Erreur lors du découpage du workflow 2b095703-8671-44c0-9493-0529e84e5345: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 08:07:29,017 task_splitter 475760 131596539659840 Découpage du workflow 57516642-003b-495c-85d0-8a83ca97ab6d de type TEXT_PROCESSING
+ERROR 2025-04-25 08:07:29,036 task_splitter 475760 131596539659840 Erreur lors du découpage du workflow 57516642-003b-495c-85d0-8a83ca97ab6d: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 08:07:31,720 task_splitter 475760 131596539659840 Découpage du workflow 5f274e2a-cebe-4802-b231-7bc6407c1644 de type TEXT_PROCESSING
+ERROR 2025-04-25 08:07:31,739 task_splitter 475760 131596539659840 Erreur lors du découpage du workflow 5f274e2a-cebe-4802-b231-7bc6407c1644: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 08:07:32,397 task_splitter 475760 131596539659840 Découpage du workflow f125ad1a-8b5e-4a69-bd4f-fdf39d6842a9 de type TEXT_PROCESSING
+ERROR 2025-04-25 08:07:32,419 task_splitter 475760 131596539659840 Erreur lors du découpage du workflow f125ad1a-8b5e-4a69-bd4f-fdf39d6842a9: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 08:07:32,974 task_splitter 475760 131596539659840 Découpage du workflow fcd6bc49-987c-424a-a595-f559dd199526 de type TEXT_PROCESSING
+ERROR 2025-04-25 08:07:32,993 task_splitter 475760 131596539659840 Erreur lors du découpage du workflow fcd6bc49-987c-424a-a595-f559dd199526: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 08:07:33,426 task_splitter 475760 131596539659840 Découpage du workflow 31126275-25f8-4ca8-bc2b-7122b4e1b020 de type TEXT_PROCESSING
+ERROR 2025-04-25 08:07:33,453 task_splitter 475760 131596539659840 Erreur lors du découpage du workflow 31126275-25f8-4ca8-bc2b-7122b4e1b020: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 08:07:33,845 task_splitter 475760 131596539659840 Découpage du workflow 59fc82d2-bd72-4d78-8e3e-487b1ae96058 de type TEXT_PROCESSING
+ERROR 2025-04-25 08:07:33,863 task_splitter 475760 131596539659840 Erreur lors du découpage du workflow 59fc82d2-bd72-4d78-8e3e-487b1ae96058: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 08:07:34,282 task_splitter 475760 131596539659840 Découpage du workflow e571f70f-adf1-4996-8a5c-e9bdfa8bf0d4 de type TEXT_PROCESSING
+ERROR 2025-04-25 08:07:34,300 task_splitter 475760 131596539659840 Erreur lors du découpage du workflow e571f70f-adf1-4996-8a5c-e9bdfa8bf0d4: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 08:07:34,692 task_splitter 475760 131596539659840 Découpage du workflow 64665e62-7828-41e0-b63f-46d6e0a9e7be de type TEXT_PROCESSING
+ERROR 2025-04-25 08:07:34,711 task_splitter 475760 131596539659840 Erreur lors du découpage du workflow 64665e62-7828-41e0-b63f-46d6e0a9e7be: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 08:07:35,061 task_splitter 475760 131596539659840 Découpage du workflow 09c90c0a-b5b9-49ab-897f-ab844af00bcd de type TEXT_PROCESSING
+ERROR 2025-04-25 08:07:35,079 task_splitter 475760 131596539659840 Erreur lors du découpage du workflow 09c90c0a-b5b9-49ab-897f-ab844af00bcd: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 08:07:35,477 task_splitter 475760 131596539659840 Découpage du workflow 85798fe7-4a96-46c0-977d-bdc65b6ef904 de type TEXT_PROCESSING
+ERROR 2025-04-25 08:07:35,496 task_splitter 475760 131596539659840 Erreur lors du découpage du workflow 85798fe7-4a96-46c0-977d-bdc65b6ef904: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 08:07:36,051 task_splitter 475760 131596539659840 Découpage du workflow cc26a68d-35ee-432a-89a8-eaac04789a16 de type TEXT_PROCESSING
+ERROR 2025-04-25 08:07:36,070 task_splitter 475760 131596539659840 Erreur lors du découpage du workflow cc26a68d-35ee-432a-89a8-eaac04789a16: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 08:20:56,109 task_splitter 475760 131596539659840 Découpage du workflow ef382b7a-a748-4126-bee7-7d462a44bdf5 de type TEXT_PROCESSING
+ERROR 2025-04-25 08:20:56,133 task_splitter 475760 131596539659840 Erreur lors du découpage du workflow ef382b7a-a748-4126-bee7-7d462a44bdf5: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 08:20:58,284 task_splitter 475760 131596539659840 Découpage du workflow 9ea2a2ca-e33d-4e08-baee-b2fb6f85c03f de type TEXT_PROCESSING
+ERROR 2025-04-25 08:20:58,302 task_splitter 475760 131596539659840 Erreur lors du découpage du workflow 9ea2a2ca-e33d-4e08-baee-b2fb6f85c03f: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 08:20:59,370 task_splitter 475760 131596539659840 Découpage du workflow c3fe3736-1d3e-4436-af00-845e86621ffa de type TEXT_PROCESSING
+ERROR 2025-04-25 08:20:59,389 task_splitter 475760 131596539659840 Erreur lors du découpage du workflow c3fe3736-1d3e-4436-af00-845e86621ffa: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 08:20:59,920 task_splitter 475760 131596539659840 Découpage du workflow a5474e0d-bae5-40d9-aa7f-135275fa4018 de type TEXT_PROCESSING
+ERROR 2025-04-25 08:20:59,938 task_splitter 475760 131596539659840 Erreur lors du découpage du workflow a5474e0d-bae5-40d9-aa7f-135275fa4018: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 08:21:00,336 task_splitter 475760 131596539659840 Découpage du workflow b3173b3f-3b32-4966-a107-cabc9a2ab826 de type TEXT_PROCESSING
+ERROR 2025-04-25 08:21:00,356 task_splitter 475760 131596539659840 Erreur lors du découpage du workflow b3173b3f-3b32-4966-a107-cabc9a2ab826: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 08:21:00,731 task_splitter 475760 131596539659840 Découpage du workflow ecc08499-c445-424d-a421-7cded75e39c6 de type TEXT_PROCESSING
+ERROR 2025-04-25 08:21:00,751 task_splitter 475760 131596539659840 Erreur lors du découpage du workflow ecc08499-c445-424d-a421-7cded75e39c6: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 08:21:01,121 task_splitter 475760 131596539659840 Découpage du workflow 5088ca96-f3e2-4b5e-8aa3-8053d8938f17 de type TEXT_PROCESSING
+ERROR 2025-04-25 08:21:01,141 task_splitter 475760 131596539659840 Erreur lors du découpage du workflow 5088ca96-f3e2-4b5e-8aa3-8053d8938f17: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 08:21:01,521 task_splitter 475760 131596539659840 Découpage du workflow 71d9d753-d5e1-42e0-821c-0bb79d3c3edc de type TEXT_PROCESSING
+ERROR 2025-04-25 08:21:01,542 task_splitter 475760 131596539659840 Erreur lors du découpage du workflow 71d9d753-d5e1-42e0-821c-0bb79d3c3edc: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 08:21:01,926 task_splitter 475760 131596539659840 Découpage du workflow 5faf5802-0f10-40a5-a046-d468b7f193a3 de type TEXT_PROCESSING
+ERROR 2025-04-25 08:21:01,944 task_splitter 475760 131596539659840 Erreur lors du découpage du workflow 5faf5802-0f10-40a5-a046-d468b7f193a3: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 08:21:09,708 task_splitter 475760 131596539659840 Découpage du workflow 008d5dbd-6a22-45bf-9116-36f7b72f50b3 de type TEXT_PROCESSING
+ERROR 2025-04-25 08:21:09,731 task_splitter 475760 131596539659840 Erreur lors du découpage du workflow 008d5dbd-6a22-45bf-9116-36f7b72f50b3: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 08:27:46,225 task_splitter 484924 129663821153856 Découpage du workflow 168826df-3e44-4c0c-aacd-da15b6e6e2a4 de type TEXT_PROCESSING
+ERROR 2025-04-25 08:27:46,249 task_splitter 484924 129663821153856 Erreur lors du découpage du workflow 168826df-3e44-4c0c-aacd-da15b6e6e2a4: Type de workflow non supporté: TEXT_PROCESSING
+INFO 2025-04-25 08:38:08,862 views 492293 130867852740160 Original workflow type: TEXT_PROCESSING
+INFO 2025-04-25 08:44:12,430 views 495092 137672853030464 Original workflow type: TEXT_PROCESSING
+INFO 2025-04-25 08:52:54,257 views 499585 127922880906816 Original workflow type: TEXT_PROCESSING
+ERROR 2025-04-25 08:52:54,269 views 499585 127922880906816 Erreur lors de la soumission du workflow: name 'TaskSplitter' is not defined
+INFO 2025-04-25 08:54:20,215 views 500786 135650567259712 Original workflow type: TEXT_PROCESSING
+INFO 2025-04-25 08:54:20,228 task_splitter 500786 135650567259712 Découpage du workflow a2b609db-0362-477b-a742-a633b901e4bd de type TEXT_PROCESSING
+INFO 2025-04-25 08:54:20,228 task_splitter 500786 135650567259712 Original workflow type: TEXT_PROCESSING
+INFO 2025-04-25 08:54:20,228 task_splitter 500786 135650567259712 Mapped workflow type: TEXT_PROCESSING
+INFO 2025-04-25 08:54:20,236 task_splitter 500786 135650567259712 Workflow a2b609db-0362-477b-a742-a633b901e4bd découpé en 2 tâches
+INFO 2025-04-25 14:08:44,773 views 51402 138181022320192 Original workflow type: TEXT_PROCESSING
+INFO 2025-04-25 14:08:44,782 task_splitter 51402 138181022320192 Découpage du workflow ad056dcb-d1ba-453e-92ef-94346c256b80 de type TEXT_PROCESSING
+INFO 2025-04-25 14:08:44,782 task_splitter 51402 138181022320192 Original workflow type: TEXT_PROCESSING
+INFO 2025-04-25 14:08:44,783 task_splitter 51402 138181022320192 Mapped workflow type: TEXT_PROCESSING
+INFO 2025-04-25 14:08:44,789 task_splitter 51402 138181022320192 Début de la conteneurisation pour 2 tâches
+INFO 2025-04-25 14:08:44,789 task_splitter 51402 138181022320192 Conteneurisation de 1 tâches feuilles
+INFO 2025-04-25 14:08:44,790 task_splitter 51402 138181022320192 Conteneurisation de la tâche 4807b0e3-49c9-4465-9f4c-5276784a50c4, commande: process_text_batch
+ERROR 2025-04-25 14:09:50,696 task_splitter 51402 138181022320192 Erreur lors de la conteneurisation de la tâche 4807b0e3-49c9-4465-9f4c-5276784a50c4: Erreur lors de la construction de l'image: Command '['docker', 'build', '-t', 'docker.io/workflowmanager/text_processor:4807b0e349c9', '.']' returned non-zero exit status 1.
+INFO 2025-04-25 14:09:50,697 task_splitter 51402 138181022320192 Conteneurisation terminée pour 1 tâches feuilles
+INFO 2025-04-25 14:09:50,698 task_splitter 51402 138181022320192 Workflow ad056dcb-d1ba-453e-92ef-94346c256b80 découpé en 2 tâches et conteneurisé
+INFO 2025-04-25 15:09:09,853 views 51402 138181011834432 Original workflow type: TEXT_PROCESSING
+INFO 2025-04-25 15:09:09,870 task_splitter 51402 138181011834432 Découpage du workflow 78868621-331c-41bc-b069-5497d6bc7120 de type TEXT_PROCESSING
+INFO 2025-04-25 15:09:09,871 task_splitter 51402 138181011834432 Original workflow type: TEXT_PROCESSING
+INFO 2025-04-25 15:09:09,871 task_splitter 51402 138181011834432 Mapped workflow type: TEXT_PROCESSING
+INFO 2025-04-25 15:09:09,877 task_splitter 51402 138181011834432 Début de la conteneurisation pour 2 tâches
+INFO 2025-04-25 15:09:09,877 task_splitter 51402 138181011834432 Conteneurisation de 1 tâches feuilles
+INFO 2025-04-25 15:09:09,878 task_splitter 51402 138181011834432 Conteneurisation de la tâche 87cfceb1-6f7e-4904-a55f-c736316c221b, commande: process_text_batch
+ERROR 2025-04-25 15:09:32,592 task_splitter 51402 138181011834432 Erreur lors de la conteneurisation de la tâche 87cfceb1-6f7e-4904-a55f-c736316c221b: Erreur lors de la construction de l'image: Command '['docker', 'build', '-t', 'docker.io/workflowmanager/text_processor:87cfceb16f7e', '.']' returned non-zero exit status 1.
+INFO 2025-04-25 15:09:32,595 task_splitter 51402 138181011834432 Conteneurisation terminée pour 1 tâches feuilles
+INFO 2025-04-25 15:09:32,596 task_splitter 51402 138181011834432 Workflow 78868621-331c-41bc-b069-5497d6bc7120 découpé en 2 tâches et conteneurisé
+INFO 2025-04-25 15:19:18,155 views 93574 128171552802368 Original workflow type: TEXT_PROCESSING
+INFO 2025-04-25 15:19:18,176 task_splitter 93574 128171552802368 Découpage du workflow f1f0d952-ba4c-48b6-819b-ceabd943b97a de type TEXT_PROCESSING
+INFO 2025-04-25 15:19:18,176 task_splitter 93574 128171552802368 Original workflow type: TEXT_PROCESSING
+INFO 2025-04-25 15:19:18,176 task_splitter 93574 128171552802368 Mapped workflow type: TEXT_PROCESSING
+INFO 2025-04-25 15:19:18,178 task_splitter 93574 128171552802368 Début de la conteneurisation pour 2 tâches
+INFO 2025-04-25 15:19:18,178 task_splitter 93574 128171552802368 Conteneurisation de 1 tâches feuilles
+INFO 2025-04-25 15:19:18,178 task_splitter 93574 128171552802368 Conteneurisation de la tâche 9b37d125-7060-46c5-8f49-c10ca7bf4103, commande: process_text_batch
+INFO 2025-04-25 15:21:49,740 task_splitter 93574 128171552802368 Tâche 9b37d125-7060-46c5-8f49-c10ca7bf4103 conteneurisée avec succès: docker.io/workflowmanager/text_processor:9b37d1257060
+INFO 2025-04-25 15:21:49,740 task_splitter 93574 128171552802368 Conteneurisation terminée pour 1 tâches feuilles
+INFO 2025-04-25 15:21:49,741 task_splitter 93574 128171552802368 Workflow f1f0d952-ba4c-48b6-819b-ceabd943b97a découpé en 2 tâches et conteneurisé
+INFO 2025-04-25 15:26:35,955 views 97859 133631488034368 Original workflow type: TEXT_PROCESSING
+INFO 2025-04-25 15:26:35,974 task_splitter 97859 133631488034368 Découpage du workflow 7506ec65-3093-4200-b0ae-2cd7313c0d4d de type TEXT_PROCESSING
+INFO 2025-04-25 15:26:35,974 task_splitter 97859 133631488034368 Original workflow type: TEXT_PROCESSING
+INFO 2025-04-25 15:26:35,974 task_splitter 97859 133631488034368 Mapped workflow type: TEXT_PROCESSING
+INFO 2025-04-25 15:26:35,976 task_splitter 97859 133631488034368 Début de la conteneurisation pour 2 tâches
+INFO 2025-04-25 15:26:39,554 task_splitter 97859 133631488034368 Conteneurisation de 1 tâches feuilles
+INFO 2025-04-25 15:26:39,555 task_splitter 97859 133631488034368 Conteneurisation de la tâche 81198971-c8fa-4c9f-81f5-c087248420c6, commande: process_text_batch
+INFO 2025-04-25 15:26:47,217 task_splitter 97859 133631488034368 Tâche 81198971-c8fa-4c9f-81f5-c087248420c6 conteneurisée avec succès: docker.io/workflowmanager/text_processor:81198971c8fa
+INFO 2025-04-25 15:26:47,218 task_splitter 97859 133631488034368 Conteneurisation terminée pour 1 tâches feuilles
+INFO 2025-04-25 15:26:47,219 task_splitter 97859 133631488034368 Workflow 7506ec65-3093-4200-b0ae-2cd7313c0d4d découpé en 2 tâches et conteneurisé
+INFO 2025-04-25 15:33:36,272 views 102070 124062466573888 Original workflow type: TEXT_PROCESSING
+INFO 2025-04-25 15:33:36,289 task_splitter 102070 124062466573888 Découpage du workflow d1fe7e91-28e9-4aea-9909-25329881d02c de type TEXT_PROCESSING
+INFO 2025-04-25 15:33:36,289 task_splitter 102070 124062466573888 Original workflow type: TEXT_PROCESSING
+INFO 2025-04-25 15:33:36,289 task_splitter 102070 124062466573888 Mapped workflow type: TEXT_PROCESSING
+INFO 2025-04-25 15:33:36,294 task_splitter 102070 124062466573888 Début de la conteneurisation pour 2 tâches
+INFO 2025-04-25 15:33:40,099 task_splitter 102070 124062466573888 Conteneurisation de 1 tâches feuilles
+INFO 2025-04-25 15:33:40,099 task_splitter 102070 124062466573888 Conteneurisation de la tâche 9f7def5b-a766-4155-8146-bcde5cb1a82a, commande: process_text_batch
+INFO 2025-04-25 15:35:10,942 task_splitter 102070 124062466573888 Tâche 9f7def5b-a766-4155-8146-bcde5cb1a82a conteneurisée avec succès: docker.io/patricehub/text_processor:9f7def5ba766
+INFO 2025-04-25 15:35:10,942 task_splitter 102070 124062466573888 Conteneurisation terminée pour 1 tâches feuilles
+INFO 2025-04-25 15:35:10,944 task_splitter 102070 124062466573888 Workflow d1fe7e91-28e9-4aea-9909-25329881d02c découpé en 2 tâches et conteneurisé
+INFO 2025-04-25 15:51:52,000 views 109845 140140139775552 Original workflow type: TEXT_PROCESSING
+INFO 2025-04-25 15:51:52,018 task_splitter 109845 140140139775552 Découpage du workflow 78694031-835f-47bb-96b3-c0679e9fa930 de type TEXT_PROCESSING
+INFO 2025-04-25 15:51:52,018 task_splitter 109845 140140139775552 Original workflow type: TEXT_PROCESSING
+INFO 2025-04-25 15:51:52,019 task_splitter 109845 140140139775552 Mapped workflow type: TEXT_PROCESSING
+INFO 2025-04-25 15:51:52,022 task_splitter 109845 140140139775552 Début de la conteneurisation pour 2 tâches
+INFO 2025-04-25 15:51:55,568 task_splitter 109845 140140139775552 Conteneurisation de 1 tâches feuilles
+INFO 2025-04-25 15:51:55,570 task_splitter 109845 140140139775552 Conteneurisation de la tâche ea7962dd-281c-4f91-8871-d31d1a4205f6, commande: process_text_batch
+INFO 2025-04-25 15:52:21,340 task_splitter 109845 140140139775552 Tâche ea7962dd-281c-4f91-8871-d31d1a4205f6 conteneurisée avec succès: docker.io/patricehub/text_processor:ea7962dd281c
+INFO 2025-04-25 15:52:21,340 task_splitter 109845 140140139775552 Conteneurisation terminée pour 1 tâches feuilles
+INFO 2025-04-25 15:52:21,341 task_splitter 109845 140140139775552 Workflow 78694031-835f-47bb-96b3-c0679e9fa930 découpé en 2 tâches et conteneurisé
+INFO 2025-05-02 13:19:11,248 views 201422 134714427209280 Original workflow type: TEXT_PROCESSING
+INFO 2025-05-02 13:19:11,263 task_splitter 201422 134714427209280 Découpage du workflow e1019aec-0dc4-4033-ba0c-62248b68025f de type TEXT_PROCESSING
+INFO 2025-05-02 13:19:11,264 task_splitter 201422 134714427209280 Original workflow type: TEXT_PROCESSING
+INFO 2025-05-02 13:19:11,264 task_splitter 201422 134714427209280 Mapped workflow type: TEXT_PROCESSING
+INFO 2025-05-02 13:19:11,274 task_splitter 201422 134714427209280 Début de la conteneurisation pour 2 tâches
+INFO 2025-05-02 13:19:21,375 task_splitter 201422 134714427209280 Conteneurisation de 1 tâches feuilles
+INFO 2025-05-02 13:19:21,377 task_splitter 201422 134714427209280 Conteneurisation de la tâche 69713dea-8614-4917-987b-ac610f0622d1, commande: process_text_batch
+INFO 2025-05-02 13:20:27,777 task_splitter 201422 134714427209280 Tâche 69713dea-8614-4917-987b-ac610f0622d1 conteneurisée avec succès: docker.io/patricehub/text_processor:69713dea8614
+INFO 2025-05-02 13:20:27,777 task_splitter 201422 134714427209280 Conteneurisation terminée pour 1 tâches feuilles
+INFO 2025-05-02 13:20:27,778 task_splitter 201422 134714427209280 Workflow e1019aec-0dc4-4033-ba0c-62248b68025f découpé en 2 tâches et conteneurisé
+INFO 2025-05-02 13:22:32,599 views 201422 134714418816576 Original workflow type: TEXT_PROCESSING
+INFO 2025-05-02 13:22:32,612 task_splitter 201422 134714418816576 Découpage du workflow b88e520b-2793-4f77-82db-00c9754d3f61 de type TEXT_PROCESSING
+INFO 2025-05-02 13:22:32,613 task_splitter 201422 134714418816576 Original workflow type: TEXT_PROCESSING
+INFO 2025-05-02 13:22:32,613 task_splitter 201422 134714418816576 Mapped workflow type: TEXT_PROCESSING
+INFO 2025-05-02 13:22:32,627 task_splitter 201422 134714418816576 Début de la conteneurisation pour 2 tâches
+INFO 2025-05-02 13:22:52,681 task_splitter 201422 134714418816576 Conteneurisation de 1 tâches feuilles
+INFO 2025-05-02 13:22:52,683 task_splitter 201422 134714418816576 Conteneurisation de la tâche 2945af67-62fa-4ee4-a49c-205c3294bbe5, commande: process_text_batch
+ERROR 2025-05-02 13:23:03,348 task_splitter 201422 134714418816576 Erreur lors de la conteneurisation de la tâche 2945af67-62fa-4ee4-a49c-205c3294bbe5: Erreur lors de la construction de l'image: Command '['docker', 'build', '-t', 'docker.io/patricehub/text_processor:2945af6762fa', '.']' returned non-zero exit status 1.
+INFO 2025-05-02 13:23:03,350 task_splitter 201422 134714418816576 Conteneurisation terminée pour 1 tâches feuilles
+INFO 2025-05-02 13:23:03,352 task_splitter 201422 134714418816576 Workflow b88e520b-2793-4f77-82db-00c9754d3f61 découpé en 2 tâches et conteneurisé
+INFO 2025-05-05 07:49:16,034 views 261485 132579364120128 Workflow créé: 0db973c3-3c6c-467c-a825-d9b66fd95400 - Type: MATRIX_ADDITION
+INFO 2025-05-05 07:49:16,095 views 261485 132579364120128 Soumission du workflow 0db973c3-3c6c-467c-a825-d9b66fd95400 de type MATRIX_ADDITION
+ERROR 2025-05-05 07:49:16,110 views 261485 132579364120128 Erreur lors de la soumission du workflow: type object 'TaskSplitter' has no attribute 'split_addition_workflow'

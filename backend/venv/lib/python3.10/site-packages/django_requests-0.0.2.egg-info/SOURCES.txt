@@ -1,0 +1,10 @@
+LICENSE
+setup.cfg
+setup.py
+django_requests.egg-info/PKG-INFO
+django_requests.egg-info/SOURCES.txt
+django_requests.egg-info/dependency_links.txt
+django_requests.egg-info/requires.txt
+django_requests.egg-info/top_level.txt
+djangorequests/__init__.py
+djangorequests/client.py
