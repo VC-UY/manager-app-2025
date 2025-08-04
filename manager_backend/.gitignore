@@ -9,7 +9,10 @@ venv
 .manager_app
 exp-env
 auth_responses
-manager_backend/workflows/examples/openmalaria/outputs
+workflows/examples/openmalaria/outputs
+scripts2
+scripts
+pending_requests
 
 db.sqlite3
 *.log
