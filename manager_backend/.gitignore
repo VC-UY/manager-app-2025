@@ -1,0 +1,15 @@
+data/
+inputs/
+__pycache__/
+migrations/
+
+
+venv
+.manager
+.manager_app
+exp-env
+auth_responses
+manager_backend/workflows/examples/openmalaria/outputs
+
+db.sqlite3
+*.log

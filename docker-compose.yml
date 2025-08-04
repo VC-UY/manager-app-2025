@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    environment:
+      - DATABASE_URL=postgres://user:password@db:5432/managerdb
+
+  db:
+    image: postgres:14
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: managerdb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # Optional broker
+  frontend:
+    build: ./manager_frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./manager_frontend:/app
+      - /app/node_modules
+    environment:
+      - NEXT_PUBLIC_BACKEND_URL=http://backend:8000
+
+
+volumes:
+  postgres_data:
