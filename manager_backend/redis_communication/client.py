@@ -39,6 +39,7 @@ class RedisClient:
         with cls._lock:
             if cls._instance is None:
                 cls._instance = cls(config)
+                cls._instance.start()
             return cls._instance
     
     def __init__(self, config=None):
@@ -90,7 +91,7 @@ class RedisClient:
             'start_time': time.time()
         }
         
-        logger.info(f"Client Redis initialisé: {self.client_type}:{self.client_id} @ {self.host}:{self.port}")
+        print(f"Client Redis initialisé: {self.client_type}:{self.client_id} @ {self.host}:{self.port}")
     
     def start(self):
         """

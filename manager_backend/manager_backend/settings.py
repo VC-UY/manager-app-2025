@@ -204,17 +204,8 @@ REST_FRAMEWORK = {
 MANAGER_HOST = 'localhost'  # Change this to your actual host
 
 
-# Configuration Redis
-# Si environnement de développement, utiliser localhost
-if DEBUG:
-    REDIS_HOST = 'localhost'  # localhost
-    REDIS_PORT = 6380  # port Redis standard
-else:
-    REDIS_HOST = '127.0.0.1'  # serveur de production
-    REDIS_PORT = 6380
-
 # --- REDIS CONFIG ---
 REDIS_PROXY_HOST = 'localhost'  # Proxy Redis
-REDIS_PROXY_PORT = 6379  # Port du proxy Redis
+REDIS_PROXY_PORT = 6380  # Port du proxy Redis
 REDIS_DB = 0
 REDIS_CHANNELS = []

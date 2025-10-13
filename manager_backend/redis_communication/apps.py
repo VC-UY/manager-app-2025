@@ -41,13 +41,14 @@ class RedisCommunicationConfig(AppConfig):
             # Récupérer ou créer l'instance du client
             client = RedisClient.get_instance()
 
-            
+            if not client.running:
+                client.start()
+
             # Enregistrer les gestionnaires par défaut
             for channel, handler in DEFAULT_HANDLERS.items():
                 client.subscribe(channel, handler)
             
-            if not client.running:
-                client.start()
+            
             
             # Lancer l'enregistrement
             from .auth_client import register_manager, login_manager
@@ -56,6 +57,7 @@ class RedisCommunicationConfig(AppConfig):
             user = User.objects.get_last_inserted()
 
             if user and not user.remote_id:
+                logger.info("Manager trouvé mais non enregistre aupres du coordinateur, tentative d'enregistrement ...")
                 sucess, data = register_manager(username=user.username,
                                     email=user.email,
                                     password=user.password,
@@ -106,7 +108,7 @@ class RedisCommunicationConfig(AppConfig):
                 else:
                     logger.error(f"Erreur lors de l'enregistrement du manager, {data}")
             elif user and user.remote_id:
-                logger.debug("Manager deja enregistré")
+                logger.debug("Manager deja enregistré, connexion aupres du coordinateur en cours..")
                 sucess, data = login_manager(user.username, user.password)
                 if sucess:
                     # logger.warning(data)
@@ -126,6 +128,8 @@ class RedisCommunicationConfig(AppConfig):
                     logger.debug("Manager connecté avec succès")
                 else:
                     logger.error(f"Erreur lors de la connexion du manager, {data}")
+            elif not user : 
+                logger.warning("Manager non trouvré, veillez enregistrer un utilisateur au frontend et relancez le server !")
             else:
                 logger.error("Le client Redis n'est pas en cours d'execution")
                 
