@@ -1,7 +1,7 @@
 data/
 inputs/
 __pycache__/
-migrations/
+# migrations/
 
 
 venv
