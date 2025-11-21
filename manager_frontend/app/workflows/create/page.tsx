@@ -14,7 +14,8 @@ const workflowTypes = [
   { value: 'MATRIX_MULTIPLICATION', label: 'Multiplication de matrices de grande taille', icon: HiOutlineCube },
   { value: 'ML_TRAINING', label: 'Entraînement de modèle machine learning', icon: HiOutlineChip },
   { value: 'OPEN_MALARIA', label: 'Simulation de propagation de la malaria', icon: HiOutlineBeaker },
-  { value: 'CUSTOM', label: 'Workflow personnalisé', icon: HiOutlineCog }
+{ value: 'CUSTOM', label: 'Workflow personnalisé', icon: HiOutlineCog }
+
 ];
 
 export default function CreateWorkflowPage() {

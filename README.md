@@ -115,7 +115,10 @@ python manage.py migrate
 # Créer un superutilisateur (optionnel)
 python manage.py createsuperuser
 
-daphne backend.asgi:application -p 8003 -b 0.0.0.0
+
+daphne -b 0.0.0.0 -p 8001 websocket_service.asgi:application
+
+daphne manager_backend.asgi:application -p 8003 -b 0.0.0.0
 
 ```
 

@@ -10,7 +10,7 @@ const workflowTypes = [
   { value: 'MATRIX_ADDITION', label: 'Addition de matrices de grande taille' },
   { value: 'MATRIX_MULTIPLICATION', label: 'Multiplication de matrices de grande taille' },
   { value: 'ML_TRAINING', label: 'Entraînement de modèle machine learning' },
-  { value: 'OPEN_MALARIA', label: 'Simulation de propagation de la malaria', icon: '🦟' },
+  { value: 'OPEN_MALARIA', label: 'Simulation de propagation de la malaria'},
   { value: 'CUSTOM', label: 'Workflow personnalisé' }
 ];
 
