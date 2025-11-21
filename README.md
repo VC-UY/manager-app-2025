@@ -114,6 +114,9 @@ python manage.py migrate
 
 # Créer un superutilisateur (optionnel)
 python manage.py createsuperuser
+
+daphne backend.asgi:application -p 8003 -b 0.0.0.0
+
 ```
 
 
@@ -906,7 +909,7 @@ Implémenter une fonction d'estimation :
 ```python
 def estimate_your_custom_resources(metadata):
     """
-    Estime les ressources nécessaires pour votre workflow.
+    Estime les ressources nécessdjango.db.utils.OperationalError: no such table: workflows_useraires pour votre workflow.
     
     Args:
         metadata (dict): Métadonnées du workflow

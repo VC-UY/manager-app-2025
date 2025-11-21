@@ -12,6 +12,7 @@ export default function VolunteersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>('all');
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     const fetchData = async () => {
@@ -36,289 +37,391 @@ export default function VolunteersPage() {
     fetchData();
   }, [filter]);
 
-  if (loading) {
-    return (
-      <div className="c">
-        <div className="container mx-auto p-6">
-          <div className="flex justify-center items-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const filteredVolunteers = volunteers.filter(volunteer => {
+    const matchesSearch = searchTerm === '' || 
+      volunteer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      volunteer.hostname.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      volunteer.ip_address.includes(searchTerm);
+    return matchesSearch;
+  });
 
-  if (error) {
-    return (
-      <div className="min-h-screen bg-black">
-        <div className="container mx-auto p-6">
-          <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 rounded-lg shadow-md">
-            <div className="flex items-center">
-              <svg className="h-6 w-6 text-red-500 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-              <p className="font-medium">{error}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const statusColors = {
-    AVAILABLE: {
-      bg: 'bg-emerald-100',
-      text: 'text-emerald-800',
-      border: 'border-emerald-200',
-      icon: '🟢'
-    },
-    BUSY: {
-      bg: 'bg-blue-100',
-      text: 'text-blue-800',
-      border: 'border-blue-200',
-      icon: '🔵'
-    },
-    OFFLINE: {
-      bg: 'bg-slate-100',
-      text: 'text-slate-800',
-      border: 'border-slate-200',
-      icon: '⚪'
-    },
-    MAINTENANCE: {
-      bg: 'bg-amber-100',
-      text: 'text-amber-800',
-      border: 'border-amber-200',
-      icon: '🟠'
-    }
+  const getStatusInfo = (status: string) => {
+    const statusMap: Record<string, any> = {
+      'AVAILABLE': { color: '#00D4FF', bg: 'rgba(0, 212, 255, 0.15)', label: 'Disponible', icon: '🟢' },
+      'BUSY': { color: '#00B0F0', bg: 'rgba(0, 180, 240, 0.15)', label: 'Occupé', icon: '🔵' },
+      'OFFLINE': { color: '#888888', bg: 'rgba(136, 136, 136, 0.15)', label: 'Hors ligne', icon: '⚪' },
+      'MAINTENANCE': { color: '#FFA500', bg: 'rgba(255, 165, 0, 0.15)', label: 'Maintenance', icon: '🟠' }
+    };
+    return statusMap[status] || { color: '#00B0F0', bg: 'rgba(0, 180, 240, 0.1)', label: status, icon: '❔' };
   };
 
   return (
-    <div className="min-h-screen bg-black">
-        {/* Barre de navigation supérieure */}
-      <div className="bg-gradient-to-r from-blue-800 to-indigo-900 rounded-lg shadow-md mb-6 overflow-hidden">
-        <div className="px-4 py-3">
-          <div className="flex flex-wrap items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <Link 
-                href="/workflows" 
-                className="inline-flex items-center px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white font-medium rounded-lg transition-colors duration-200"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-                </svg>
-                Workflows
-              </Link>
-              
-              <Link 
-                href="/tasks" 
-                className="inline-flex items-center px-4 py-2 bg-indigo-800 hover:bg-indigo-700 text-white font-medium rounded-lg transition-colors duration-200"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
-                Tasks
-              </Link>
-              
-        
+    <div className="min-h-screen" style={{ background: 'linear-gradient(180deg, #001440 0%, #002060 50%, #001440 100%)' }}>
+      <style jsx>{`
+        @keyframes slideIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+        @keyframes spin { to { transform: rotate(360deg); } }
+      `}</style>
+
+      <div className="container mx-auto px-4 py-8 max-w-7xl">
+        {/* Top Navigation */}
+        <div className="mb-6 p-4 rounded-2xl backdrop-blur-xl"
+          style={{
+            background: 'linear-gradient(135deg, rgba(0, 32, 96, 0.8) 0%, rgba(0, 20, 64, 0.8) 100%)',
+            border: '2px solid rgba(0, 180, 240, 0.3)',
+            boxShadow: '0 8px 32px rgba(0, 32, 96, 0.5)',
+          }}>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              {[
+                { href: '/workflows', label: 'Workflows', active: false },
+                { href: '/tasks', label: 'Tasks', active: false },
+                { href: '/volunteers', label: 'Volontaires', active: true }
+              ].map((item, idx) => (
+                <Link key={idx} href={item.href}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm transition-all duration-300"
+                  style={{
+                    background: item.active ? 'linear-gradient(135deg, #00B0F0 0%, #00D4FF 100%)' : 'rgba(255, 255, 255, 0.1)',
+                    color: '#FFFFFF',
+                    border: item.active ? '2px solid rgba(0, 212, 255, 0.4)' : '2px solid rgba(0, 180, 240, 0.2)',
+                    letterSpacing: '0.3px'
+                  }}>
+                  {item.label}
+                </Link>
+              ))}
             </div>
-            
-            <div className="flex items-center space-x-3 mt-2 sm:mt-0">
-              <span className="text-white text-sm hidden md:inline-block">Plateforme de gestion de workflows distribués</span>
-             <ProfileModal />
-            </div>
+            <ProfileModal />
           </div>
         </div>
-      </div>
-      <div className="container mx-auto p-6">
-        <div className="flex flex-col md:flex-row justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold text-indigo-900 mb-4 md:mb-0">
-            Volontaires
-            <span className="ml-2 text-base font-normal text-indigo-600 bg-indigo-100 px-3 py-1 rounded-full">
-              {volunteers.length} au total
-            </span>
-          </h1>
+
+        {/* Header */}
+        <div className="relative mb-8 p-8 rounded-3xl backdrop-blur-xl overflow-hidden"
+          style={{
+            background: 'linear-gradient(135deg, rgba(0, 32, 96, 0.9) 0%, rgba(0, 20, 64, 0.9) 100%)',
+            border: '2px solid rgba(0, 180, 240, 0.3)',
+            boxShadow: '0 12px 48px rgba(0, 32, 96, 0.6)',
+            animation: 'slideIn 0.8s ease-out'
+          }}>
+          <div className="absolute top-0 right-0 w-64 h-64 rounded-full opacity-10"
+            style={{
+              background: 'radial-gradient(circle, rgba(0, 212, 255, 0.3) 0%, transparent 70%)',
+              animation: 'pulse 4s ease-in-out infinite'
+            }} />
           
-          <div className="w-full md:w-auto">
-            <div className="relative">
-              <select
-                className="appearance-none block w-full md:w-56 bg-white border border-indigo-200 hover:border-indigo-500 px-4 py-3 pr-8 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-indigo-900 font-medium transition-all duration-300"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-              >
-                <option value="all">Tous les statuts</option>
-                <option value="AVAILABLE">Disponibles</option>
-                <option value="BUSY">Occupés</option>
-                <option value="OFFLINE">Hors ligne</option>
-                <option value="MAINTENANCE">En maintenance</option>
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-indigo-700">
-                <svg className="fill-current h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-                  <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
+          <div className="relative z-10">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h1 className="text-4xl font-bold mb-3" style={{
+                  background: 'linear-gradient(135deg, #FFFFFF 0%, #00D4FF 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  letterSpacing: '0.5px'
+                }}>
+                  Volontaires
+                </h1>
+                <p style={{ color: '#00B0F0', fontSize: '16px' }}>
+                  Gérez et surveillez tous vos nœuds de calcul distribués
+                </p>
+              </div>
+              <div className="hidden md:block w-16 h-16 rounded-2xl flex items-center justify-center"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.2) 0%, rgba(0, 180, 240, 0.1) 100%)',
+                  border: '2px solid rgba(0, 212, 255, 0.3)',
+                  animation: 'float 3s ease-in-out infinite'
+                }}>
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#00D4FF" strokeWidth="2">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
                 </svg>
               </div>
+            </div>
+
+            {/* Stats */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {[
+                { label: 'Total', value: volunteers.length, color: '#00D4FF', icon: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0-8 4 4 0 0 0 0 8z' },
+                { label: 'Disponibles', value: volunteers.filter(v => v.status === 'AVAILABLE').length, color: '#00FF88', icon: 'M5 13l4 4L19 7' },
+                { label: 'Occupés', value: volunteers.filter(v => v.status === 'BUSY').length, color: '#00B0F0', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
+                { label: 'Hors ligne', value: volunteers.filter(v => v.status === 'OFFLINE').length, color: '#888888', icon: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0' }
+              ].map((stat, idx) => (
+                <div key={idx} className="p-4 rounded-xl backdrop-blur-sm transition-all duration-300"
+                  style={{
+                    background: 'rgba(0, 180, 240, 0.1)',
+                    border: '2px solid rgba(0, 180, 240, 0.2)'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = stat.color;
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'rgba(0, 180, 240, 0.2)';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                  }}>
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl flex items-center justify-center"
+                      style={{ background: `${stat.color}20`, border: `2px solid ${stat.color}40` }}>
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={stat.color} strokeWidth="2">
+                        <path d={stat.icon} />
+                      </svg>
+                    </div>
+                    <div>
+                      <div style={{ color: '#00B0F0', fontSize: '12px', fontWeight: 500 }}>{stat.label}</div>
+                      <div style={{ color: '#FFFFFF', fontSize: '24px', fontWeight: 700 }}>{stat.value}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
 
-        <div className="overflow-hidden bg-white rounded-xl shadow-lg border border-indigo-100">
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead>
-                <tr className="bg-indigo-600 text-white">
-                  <th className="px-6 py-4 text-left text-sm font-medium uppercase tracking-wider">
-                    Nom
-                  </th>
-                  <th className="px-6 py-4 text-left text-sm font-medium uppercase tracking-wider">
-                    Ressources
-                  </th>
-                  <th className="px-6 py-4 text-left text-sm font-medium uppercase tracking-wider">
-                    Statut
-                  </th>
-                  <th className="px-6 py-4 text-left text-sm font-medium uppercase tracking-wider">
-                    Tâches
-                  </th>
-                  <th className="px-6 py-4 text-left text-sm font-medium uppercase tracking-wider">
-                    Dernière activité
-                  </th>
-                  <th className="px-6 py-4 text-left text-sm font-medium uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-indigo-100">
-                {volunteers.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-6 py-10 text-center">
-                      <div className="flex flex-col items-center">
-                        <svg className="w-16 h-16 text-indigo-200 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                        </svg>
-                        <p className="text-lg font-medium text-indigo-900">Aucun volontaire disponible</p>
-                        <p className="text-indigo-500 mt-1">Essayez de modifier vos filtres ou revenez plus tard</p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  volunteers.map((volunteer) => {
-                    const statusStyle = statusColors[volunteer.status as keyof typeof statusColors] || {
-                      bg: 'bg-gray-200',
-                      text: 'text-gray-800',
-                      border: 'border-gray-300',
-                      icon: '❔'
-                    };
-                    
-                    
-                    return (
-                      <tr key={volunteer.id} className="hover:bg-indigo-50 transition-colors duration-150">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center">
-                            <div className="flex-shrink-0 h-10 w-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-700 font-bold">
-                              {volunteer.name.charAt(0).toUpperCase()}
-                            </div>
-                            <div className="ml-4">
-                              <div className="text-lg font-medium text-indigo-900">{volunteer.name}</div>
-                              <div className="flex flex-col sm:flex-row sm:items-center mt-1">
-                                <div className="text-indigo-700">{volunteer.hostname}</div>
-                                <span className="hidden sm:block mx-2 text-indigo-300">•</span>
-                                <div className="text-indigo-500 text-sm">{volunteer.ip_address}</div>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex flex-col space-y-1">
-                            <div className="inline-flex items-center">
-                              <svg className="h-4 w-4 text-indigo-500 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                              </svg>
-                              <span className="text-indigo-900 font-medium">{volunteer.cpu_cores} CPU cores</span>
-                            </div>
-                            <div className="inline-flex items-center">
-                              <svg className="h-4 w-4 text-indigo-500 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                              </svg>
-                              <span className="text-indigo-800">{volunteer.ram_mb} MB RAM</span>
-                            </div>
-                            <div className="inline-flex items-center">
-                              <svg className="h-4 w-4 text-indigo-500 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                              </svg>
-                              <span className="text-indigo-800">{volunteer.disk_gb} GB Disk</span>
-                            </div>
-                            {volunteer.gpu && (
-                              <div className="inline-flex items-center">
-                                <svg className="h-4 w-4 text-indigo-500 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                </svg>
-                                <span className="text-indigo-800 font-medium">GPU: {volunteer.gpu}</span>
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${statusStyle.bg} ${statusStyle.text}`}>
-                            <span className="mr-1">{statusStyle.icon}</span>
-                            {volunteer.status}
-                          </div>
-                          <p className={`mt-2 text-sm ${volunteer.available ? 'text-emerald-600' : 'text-amber-600'}`}>
-                            {volunteer.available ? '✓ Disponible' : '✗ Non disponible'}
-                          </p>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-800">
-                            <svg className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                            </svg>
-                            {volunteer.assigned_tasks_count || 0} tâche(s)
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center">
-                            <svg className="h-4 w-4 text-indigo-500 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <span className="text-indigo-800">
-                              {new Date(volunteer.last_seen).toLocaleString('fr-FR', {
-                                day: '2-digit',
-                                month: '2-digit',
-                                year: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          <div className="flex flex-col sm:flex-row gap-2">
-                            <Link 
-                              href={`/volunteers/${volunteer.id}`} 
-                              className="inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-150"
-                            >
-                              <svg className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                              </svg>
-                              Détails
-                            </Link>
-                            <Link 
-                              href={`/volunteers/${volunteer.id}/tasks`} 
-                              className="inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-indigo-700 bg-indigo-100 hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-150"
-                            >
-                              <svg className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-                              </svg>
-                              Tâches
-                            </Link>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+        {/* Search & Filters */}
+        <div className="mb-6 p-4 rounded-2xl backdrop-blur-xl"
+          style={{
+            background: 'linear-gradient(135deg, rgba(0, 32, 96, 0.6) 0%, rgba(0, 20, 64, 0.6) 100%)',
+            border: '2px solid rgba(0, 180, 240, 0.3)'
+          }}>
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex-1 relative">
+              <svg className="absolute left-3 top-1/2 transform -translate-y-1/2" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00B0F0" strokeWidth="2">
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.35-4.35" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Rechercher un volontaire..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 rounded-xl transition-all duration-300"
+                style={{
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  border: '2px solid rgba(0, 180, 240, 0.3)',
+                  color: '#FFFFFF',
+                  outline: 'none'
+                }}
+                onFocus={(e) => {
+                  e.target.style.borderColor = '#00D4FF';
+                  e.target.style.boxShadow = '0 0 20px rgba(0, 212, 255, 0.3)';
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = 'rgba(0, 180, 240, 0.3)';
+                  e.target.style.boxShadow = 'none';
+                }}
+              />
+            </div>
+            
+            <select
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              className="px-4 py-3 rounded-xl transition-all duration-300"
+              style={{
+                background: 'rgba(255, 255, 255, 0.1)',
+                border: '2px solid rgba(0, 180, 240, 0.3)',
+                color: '#FFFFFF',
+                outline: 'none'
+              }}>
+              <option value="all">Tous les statuts</option>
+              <option value="AVAILABLE">Disponibles</option>
+              <option value="BUSY">Occupés</option>
+              <option value="OFFLINE">Hors ligne</option>
+              <option value="MAINTENANCE">En maintenance</option>
+            </select>
           </div>
         </div>
+
+        {/* Error Message */}
+        {error && (
+          <div className="mb-6 p-4 rounded-xl" style={{
+            background: 'linear-gradient(90deg, rgba(255, 68, 68, 0.15) 0%, rgba(255, 68, 68, 0.05) 100%)',
+            border: '2px solid rgba(255, 68, 68, 0.3)',
+            animation: 'slideIn 0.5s ease-out'
+          }}>
+            <p style={{ color: '#FF8888', fontSize: '14px', fontWeight: 500 }}>{error}</p>
+          </div>
+        )}
+
+        {/* Loading */}
+        {loading ? (
+          <div className="flex flex-col items-center justify-center p-12 rounded-2xl backdrop-blur-xl"
+            style={{
+              background: 'linear-gradient(135deg, rgba(0, 32, 96, 0.6) 0%, rgba(0, 20, 64, 0.6) 100%)',
+              border: '2px solid rgba(0, 180, 240, 0.3)'
+            }}>
+            <div className="w-16 h-16 rounded-full mb-4"
+              style={{
+                border: '4px solid rgba(0, 180, 240, 0.2)',
+                borderTopColor: '#00D4FF',
+                animation: 'spin 1s linear infinite'
+              }} />
+            <p style={{ color: '#00B0F0', fontSize: '16px', fontWeight: 500 }}>Chargement...</p>
+          </div>
+        ) : filteredVolunteers.length === 0 ? (
+          <div className="text-center p-12 rounded-2xl backdrop-blur-xl"
+            style={{
+              background: 'linear-gradient(135deg, rgba(0, 32, 96, 0.6) 0%, rgba(0, 20, 64, 0.6) 100%)',
+              border: '2px solid rgba(0, 180, 240, 0.3)'
+            }}>
+            <div className="w-20 h-20 mx-auto mb-6 rounded-2xl flex items-center justify-center"
+              style={{
+                background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.2) 0%, rgba(0, 180, 240, 0.1) 100%)',
+                border: '2px solid rgba(0, 212, 255, 0.3)'
+              }}>
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#00D4FF" strokeWidth="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+            </div>
+            <h2 style={{ color: '#FFFFFF', fontSize: '24px', fontWeight: 700, marginBottom: '12px' }}>
+              Aucun volontaire trouvé
+            </h2>
+            <p style={{ color: '#00B0F0', fontSize: '14px' }}>
+              Essayez de modifier vos filtres de recherche
+            </p>
+          </div>
+        ) : (
+          <>
+            <div style={{ color: '#00B0F0', fontSize: '13px', marginBottom: '16px' }}>
+              {filteredVolunteers.length} volontaire(s) trouvé(s)
+            </div>
+
+            {/* Volunteers Grid */}
+            <div className="grid grid-cols-1 gap-4">
+              {filteredVolunteers.map((volunteer) => {
+                const statusInfo = getStatusInfo(volunteer.status);
+                
+                return (
+                  <div key={volunteer.id}
+                    className="p-6 rounded-2xl backdrop-blur-xl transition-all duration-300"
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(0, 32, 96, 0.6) 0%, rgba(0, 20, 64, 0.6) 100%)',
+                      border: '2px solid rgba(0, 180, 240, 0.3)'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = '#00D4FF';
+                      e.currentTarget.style.transform = 'translateY(-4px)';
+                      e.currentTarget.style.boxShadow = '0 12px 40px rgba(0, 212, 255, 0.3)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = 'rgba(0, 180, 240, 0.3)';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}>
+                    
+                    <div className="flex flex-col lg:flex-row lg:items-center gap-6">
+                      {/* Volunteer Info */}
+                      <div className="flex-1">
+                        <div className="flex items-center gap-4 mb-4">
+                          <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-xl font-bold"
+                            style={{
+                              background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.2) 0%, rgba(0, 180, 240, 0.1) 100%)',
+                              border: '2px solid rgba(0, 212, 255, 0.3)',
+                              color: '#00D4FF'
+                            }}>
+                            {volunteer.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <h3 style={{ color: '#00D4FF', fontSize: '20px', fontWeight: 700, letterSpacing: '0.3px' }}>
+                              {volunteer.name}
+                            </h3>
+                            <div className="flex flex-wrap items-center gap-2 mt-1">
+                              <span style={{ color: '#00B0F0', fontSize: '14px' }}>{volunteer.hostname}</span>
+                              <span style={{ color: 'rgba(0, 180, 240, 0.5)' }}>•</span>
+                              <span style={{ color: '#00B0F0', fontSize: '14px' }}>{volunteer.ip_address}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Resources */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                          <div className="p-3 rounded-xl" style={{ background: 'rgba(0, 180, 240, 0.1)', border: '1px solid rgba(0, 180, 240, 0.2)' }}>
+                            <div style={{ color: '#00B0F0', fontSize: '11px', marginBottom: '4px' }}>CPU Cores</div>
+                            <div style={{ color: '#FFFFFF', fontSize: '16px', fontWeight: 700 }}>{volunteer.cpu_cores}</div>
+                          </div>
+                          <div className="p-3 rounded-xl" style={{ background: 'rgba(0, 180, 240, 0.1)', border: '1px solid rgba(0, 180, 240, 0.2)' }}>
+                            <div style={{ color: '#00B0F0', fontSize: '11px', marginBottom: '4px' }}>RAM</div>
+                            <div style={{ color: '#FFFFFF', fontSize: '16px', fontWeight: 700 }}>{volunteer.ram_mb} MB</div>
+                          </div>
+                          <div className="p-3 rounded-xl" style={{ background: 'rgba(0, 180, 240, 0.1)', border: '1px solid rgba(0, 180, 240, 0.2)' }}>
+                            <div style={{ color: '#00B0F0', fontSize: '11px', marginBottom: '4px' }}>Disque</div>
+                            <div style={{ color: '#FFFFFF', fontSize: '16px', fontWeight: 700 }}>{volunteer.disk_gb} GB</div>
+                          </div>
+                          {volunteer.gpu && (
+                            <div className="p-3 rounded-xl" style={{ background: 'rgba(0, 212, 255, 0.15)', border: '1px solid rgba(0, 212, 255, 0.3)' }}>
+                              <div style={{ color: '#00D4FF', fontSize: '11px', marginBottom: '4px' }}>GPU</div>
+                              <div style={{ color: '#FFFFFF', fontSize: '16px', fontWeight: 700 }}>{volunteer.gpu}</div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Tags */}
+                        <div className="flex flex-wrap gap-2">
+                          <span className="px-3 py-1 rounded-full text-xs font-semibold"
+                            style={{ background: statusInfo.bg, color: statusInfo.color, border: `1px solid ${statusInfo.color}40` }}>
+                            {statusInfo.icon} {statusInfo.label}
+                          </span>
+                          <span className="px-3 py-1 rounded-full text-xs font-semibold"
+                            style={{ 
+                              background: volunteer.available ? 'rgba(0, 255, 136, 0.15)' : 'rgba(255, 165, 0, 0.15)', 
+                              color: volunteer.available ? '#00FF88' : '#FFA500',
+                              border: volunteer.available ? '1px solid rgba(0, 255, 136, 0.3)' : '1px solid rgba(255, 165, 0, 0.3)'
+                            }}>
+                            {volunteer.available ? '✓ Disponible' : '✗ Non disponible'}
+                          </span>
+                          <span className="px-3 py-1 rounded-full text-xs font-semibold"
+                            style={{ background: 'rgba(138, 43, 226, 0.15)', color: '#BA7FFF', border: '1px solid rgba(138, 43, 226, 0.3)' }}>
+                            {volunteer.assigned_tasks_count || 0} tâche(s)
+                          </span>
+                          <span className="px-3 py-1 rounded-full text-xs font-semibold"
+                            style={{ background: 'rgba(0, 180, 240, 0.1)', color: '#00B0F0', border: '1px solid rgba(0, 180, 240, 0.3)' }}>
+                            {new Date(volunteer.last_seen).toLocaleString('fr-FR', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex lg:flex-col gap-2">
+                        <Link href={`/volunteers/${volunteer.id}`}
+                          className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-300 whitespace-nowrap"
+                          style={{
+                            background: 'rgba(0, 212, 255, 0.1)',
+                            color: '#00D4FF',
+                            border: '2px solid rgba(0, 212, 255, 0.3)'
+                          }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                          Détails
+                        </Link>
+                        <Link href={`/volunteers/${volunteer.id}/tasks`}
+                          className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-300 whitespace-nowrap"
+                          style={{
+                            background: 'rgba(0, 180, 240, 0.1)',
+                            color: '#00B0F0',
+                            border: '2px solid rgba(0, 180, 240, 0.3)'
+                          }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                          </svg>
+                          Tâches
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

@@ -1,337 +1,580 @@
+// app/volunteers/page.tsx
 "use client"
 
 import { useEffect, useState } from 'react';
-import { taskService } from '@/lib/api';
+import { volunteerService } from '@/lib/api';
+import { Volunteer } from '../../lib/types';
 import Link from 'next/link';
-import { Task } from '@/lib/types';
 import { ProfileModal } from '@/components/ProfileModal';
 
-export default function TasksPage() {
-  const [tasks, setTasks] = useState<Task[]>([]);
+export default function VolunteersPage() {
+  const [volunteers, setVolunteers] = useState<Volunteer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filterStatus, setFilterStatus] = useState<string | null>(null);
+  const [filter, setFilter] = useState<string>('all');
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    const fetchTasks = async () => {
+    const fetchData = async () => {
       try {
         setLoading(true);
-        let tasksData;
         
-        if (filterStatus) {
-          tasksData = await taskService.getTasksByStatus(filterStatus);
+        let volunteerData;
+        if (filter === 'all') {
+          volunteerData = await volunteerService.getVolunteers();
         } else {
-          tasksData = await taskService.getTasks();
+          volunteerData = await volunteerService.getVolunteersByStatus(filter);
         }
         
-        setTasks(tasksData);
+        setVolunteers(volunteerData);
         setLoading(false);
       } catch (err: any) {
-        console.error('Erreur lors du chargement des tâches:', err);
-        setError(err.error || 'Une erreur est survenue lors du chargement des tâches');
+        setError(err.error || 'Une erreur est survenue');
         setLoading(false);
       }
     };
 
-    fetchTasks();
-  }, [filterStatus]);
+    fetchData();
+  }, [filter]);
 
-  const getStatusClass = (status: string) => {
-    switch (status) {
-      case 'PENDING':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'RUNNING':
-        return 'bg-blue-100 text-blue-800';
-      case 'COMPLETED':
-        return 'bg-green-100 text-green-800';
-      case 'FAILED':
-        return 'bg-red-100 text-red-800';
-      case 'ASSIGNED':
-        return 'bg-purple-100 text-purple-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
+  const filteredVolunteers = volunteers.filter(volunteer => {
+    const matchesSearch = searchTerm === '' || 
+      volunteer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      volunteer.hostname.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      volunteer.ip_address.includes(searchTerm);
+    return matchesSearch;
+  });
+
+  const getStatusInfo = (status: string) => {
+    const statusMap: Record<string, any> = {
+      'AVAILABLE': { color: '#00D4FF', bg: 'rgba(0, 212, 255, 0.15)', label: 'Disponible', icon: '🟢' },
+      'BUSY': { color: '#00B0F0', bg: 'rgba(0, 180, 240, 0.15)', label: 'Occupé', icon: '🔵' },
+      'OFFLINE': { color: '#888888', bg: 'rgba(136, 136, 136, 0.15)', label: 'Hors ligne', icon: '⚪' },
+      'MAINTENANCE': { color: '#FFA500', bg: 'rgba(255, 165, 0, 0.15)', label: 'Maintenance', icon: '🟠' }
+    };
+    return statusMap[status] || { color: '#00B0F0', bg: 'rgba(0, 180, 240, 0.1)', label: status, icon: '❔' };
   };
 
   return (
-    <div className="container mx-auto p-4">
-      {/* Barre de navigation supérieure */}
-      <div className="bg-gradient-to-r from-blue-800 to-indigo-900 rounded-lg shadow-md mb-6 overflow-hidden">
-        <div className="px-4 py-3">
-          <div className="flex flex-wrap items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <Link 
-                href="/workflows" 
-                className="inline-flex items-center px-4 py-2 bg-indigo-800 hover:bg-indigo-700 text-white font-medium rounded-lg transition-colors duration-200"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-                </svg>
-                Workflows
-              </Link>
-              
-              <Link 
-                href="/tasks" 
-                className="inline-flex items-center px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white font-medium rounded-lg transition-colors duration-200"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
-                Tâches
-              </Link>
-              
-              <Link 
-                href="/volunteers" 
-                className="inline-flex items-center px-4 py-2 bg-indigo-800 hover:bg-indigo-700 text-white font-medium rounded-lg transition-colors duration-200"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                </svg>
-                Volontaires
-              </Link>
+    <div className="min-h-screen" style={{ background: 'linear-gradient(180deg, #001440 0%, #002060 50%, #001440 100%)' }}>
+      <style jsx>{`
+        @keyframes slideIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes glow { 0%, 100% { box-shadow: 0 0 20px rgba(0, 212, 255, 0.3); } 50% { box-shadow: 0 0 40px rgba(0, 212, 255, 0.6); } }
+      `}</style>
+
+      <div className="container mx-auto px-4 py-8 max-w-7xl">
+        {/* Top Navigation */}
+        <div className="mb-6 p-4 rounded-2xl backdrop-blur-xl"
+          style={{
+            background: 'linear-gradient(135deg, rgba(0, 32, 96, 0.8) 0%, rgba(0, 20, 64, 0.8) 100%)',
+            border: '2px solid rgba(0, 180, 240, 0.3)',
+            boxShadow: '0 8px 32px rgba(0, 32, 96, 0.5)',
+          }}>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              {[
+                { href: '/workflows', label: 'Workflows', active: false },
+                { href: '/tasks', label: 'Tasks', active: false },
+                { href: '/volunteers', label: 'Volontaires', active: true }
+              ].map((item, idx) => (
+                <Link key={idx} href={item.href}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm transition-all duration-300"
+                  style={{
+                    background: item.active ? 'linear-gradient(135deg, #00B0F0 0%, #00D4FF 100%)' : 'rgba(255, 255, 255, 0.1)',
+                    color: '#FFFFFF',
+                    border: item.active ? '2px solid rgba(0, 212, 255, 0.4)' : '2px solid rgba(0, 180, 240, 0.2)',
+                    letterSpacing: '0.3px',
+                    boxShadow: item.active ? '0 4px 16px rgba(0, 180, 240, 0.3)' : 'none'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!item.active) {
+                      e.currentTarget.style.background = 'rgba(0, 180, 240, 0.2)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!item.active) {
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                    }
+                  }}>
+                  {item.label}
+                </Link>
+              ))}
             </div>
-            
-            <div className="flex items-center space-x-3 mt-2 sm:mt-0">
-              <span className="text-white text-sm hidden md:inline-block">Plateforme de gestion de workflows distribués</span>
-              <ProfileModal />
-            </div>
+            <ProfileModal />
           </div>
         </div>
-      </div>
 
-      {/* Header avec animation et dégradé */}
-      <div className="relative bg-gradient-to-r from-blue-600 to-indigo-700 rounded-xl shadow-lg mb-8 overflow-hidden">
-        <div className="absolute inset-0 bg-grid-white/10 opacity-10"></div>
-        <div className="relative z-10 px-8 py-10 text-white">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-3xl font-bold mb-2">Toutes les Tâches</h1>
-              <p className="text-blue-100 max-w-2xl">
-                Consultez et gérez toutes les tâches de vos workflows distribués. Suivez leur progression et assignez-les à des volontaires.
-              </p>
-            </div>
-            <div className="hidden md:block">
-              <div className="relative p-3 bg-white/10 rounded-full backdrop-blur-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
+        {/* Header */}
+        <div className="relative mb-8 p-8 rounded-3xl backdrop-blur-xl overflow-hidden"
+          style={{
+            background: 'linear-gradient(135deg, rgba(0, 32, 96, 0.9) 0%, rgba(0, 20, 64, 0.9) 100%)',
+            border: '2px solid rgba(0, 180, 240, 0.3)',
+            boxShadow: '0 12px 48px rgba(0, 32, 96, 0.6)',
+            animation: 'slideIn 0.8s ease-out'
+          }}>
+          {/* Floating decoration */}
+          <div className="absolute top-0 right-0 w-64 h-64 rounded-full opacity-10"
+            style={{
+              background: 'radial-gradient(circle, rgba(0, 212, 255, 0.3) 0%, transparent 70%)',
+              animation: 'pulse 4s ease-in-out infinite'
+            }} />
+          
+          {/* Particles effect */}
+          <div className="absolute inset-0 overflow-hidden opacity-20">
+            {[...Array(8)].map((_, i) => (
+              <div key={i} className="absolute text-xs font-mono"
+                style={{
+                  color: '#00D4FF',
+                  left: `${Math.random() * 100}%`,
+                  top: `${Math.random() * 100}%`,
+                  animation: `float ${3 + Math.random() * 2}s ease-in-out infinite ${Math.random() * 2}s`,
+                }}>
+                {Math.random() > 0.5 ? '01' : '10'}
               </div>
-            </div>
+            ))}
           </div>
           
-          {/* Stats cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
-            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20">
-              <div className="flex items-center">
-                <div className="bg-yellow-500 p-2 rounded-md mr-3">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <div>
-                  <div className="text-sm text-blue-100">En attente</div>
-                  <div className="text-xl font-semibold">
-                    {tasks.filter(t => t.status === 'PENDING').length}
-                  </div>
-                </div>
+          <div className="relative z-10">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h1 className="text-4xl font-bold mb-3" style={{
+                  background: 'linear-gradient(135deg, #FFFFFF 0%, #00D4FF 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  letterSpacing: '0.5px'
+                }}>
+                  Volontaires
+                </h1>
+                <p style={{ color: '#00B0F0', fontSize: '16px' }}>
+                  Gérez et surveillez tous vos nœuds de calcul distribués
+                </p>
+              </div>
+              <div className="hidden md:flex w-16 h-16 rounded-2xl items-center justify-center"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.2) 0%, rgba(0, 180, 240, 0.1) 100%)',
+                  border: '2px solid rgba(0, 212, 255, 0.3)',
+                  animation: 'float 3s ease-in-out infinite'
+                }}>
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#00D4FF" strokeWidth="2">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
               </div>
             </div>
-            
-            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20">
-              <div className="flex items-center">
-                <div className="bg-blue-500 p-2 rounded-md mr-3">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                </div>
-                <div>
-                  <div className="text-sm text-blue-100">En cours</div>
-                  <div className="text-xl font-semibold">
-                    {tasks.filter(t => t.status === 'RUNNING').length}
+
+            {/* Stats */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {[
+                { label: 'Total', value: volunteers.length, color: '#00D4FF', icon: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0-8 4 4 0 0 0 0 8z' },
+                { label: 'Disponibles', value: volunteers.filter(v => v.status === 'AVAILABLE').length, color: '#00FF88', icon: 'M5 13l4 4L19 7' },
+                { label: 'Occupés', value: volunteers.filter(v => v.status === 'BUSY').length, color: '#00B0F0', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
+                { label: 'Hors ligne', value: volunteers.filter(v => v.status === 'OFFLINE').length, color: '#888888', icon: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0' }
+              ].map((stat, idx) => (
+                <div key={idx} className="p-4 rounded-xl backdrop-blur-sm transition-all duration-300"
+                  style={{
+                    background: 'rgba(0, 180, 240, 0.1)',
+                    border: '2px solid rgba(0, 180, 240, 0.2)'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = stat.color;
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = `0 8px 24px ${stat.color}40`;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'rgba(0, 180, 240, 0.2)';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = 'none';
+                  }}>
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl flex items-center justify-center"
+                      style={{ 
+                        background: `linear-gradient(135deg, ${stat.color}20 0%, ${stat.color}10 100%)`, 
+                        border: `2px solid ${stat.color}40` 
+                      }}>
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={stat.color} strokeWidth="2">
+                        <path d={stat.icon} />
+                      </svg>
+                    </div>
+                    <div>
+                      <div style={{ color: '#00B0F0', fontSize: '12px', fontWeight: 500, letterSpacing: '0.3px' }}>{stat.label}</div>
+                      <div style={{ color: '#FFFFFF', fontSize: '24px', fontWeight: 700 }}>{stat.value}</div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
-            
-            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20">
-              <div className="flex items-center">
-                <div className="bg-green-500 p-2 rounded-md mr-3">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-                <div>
-                  <div className="text-sm text-blue-100">Terminées</div>
-                  <div className="text-xl font-semibold">
-                    {tasks.filter(t => t.status === 'COMPLETED').length}
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20">
-              <div className="flex items-center">
-                <div className="bg-red-500 p-2 rounded-md mr-3">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <div>
-                  <div className="text-sm text-blue-100">Échouées</div>
-                  <div className="text-xl font-semibold">
-                    {tasks.filter(t => t.status === 'FAILED').length}
-                  </div>
-                </div>
-              </div>
+              ))}
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Filtres et actions */}
-      <div className="bg-white rounded-xl shadow-md mb-6 p-4">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-3 md:space-y-0">
-          <div className="flex flex-grow max-w-md">
-            <div className="relative flex-grow">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <svg className="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
-                </svg>
-              </div>
+        {/* Search & Filters */}
+        <div className="mb-6 p-4 rounded-2xl backdrop-blur-xl"
+          style={{
+            background: 'linear-gradient(135deg, rgba(0, 32, 96, 0.6) 0%, rgba(0, 20, 64, 0.6) 100%)',
+            border: '2px solid rgba(0, 180, 240, 0.3)',
+            boxShadow: '0 4px 16px rgba(0, 32, 96, 0.3)'
+          }}>
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex-1 relative">
+              <svg className="absolute left-3 top-1/2 transform -translate-y-1/2" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00B0F0" strokeWidth="2">
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.35-4.35" />
+              </svg>
               <input
                 type="text"
-                placeholder="Rechercher une tâche..."
-                className="focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md"
+                placeholder="Rechercher un volontaire..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 rounded-xl transition-all duration-300"
+                style={{
+                  background: 'rgba(0, 0, 0, 0.3)',
+                  border: '2px solid rgba(0, 180, 240, 0.3)',
+                  color: '#FFFFFF',
+                  outline: 'none'
+                }}
+                onFocus={(e) => {
+                  e.target.style.borderColor = '#00D4FF';
+                  e.target.style.boxShadow = '0 0 20px rgba(0, 212, 255, 0.3)';
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = 'rgba(0, 180, 240, 0.3)';
+                  e.target.style.boxShadow = 'none';
+                }}
               />
             </div>
-          </div>
-          
-          <div className="flex items-center space-x-2">
+            
             <select
-              className="rounded-md border-gray-300 py-2 pl-3 pr-10 text-base focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-              value={filterStatus || ''}
-              onChange={(e) => setFilterStatus(e.target.value === '' ? null : e.target.value)}
-            >
-              <option value="">Tous les statuts</option>
-              <option value="PENDING">En attente</option>
-              <option value="RUNNING">En cours</option>
-              <option value="COMPLETED">Terminée</option>
-              <option value="FAILED">Échouée</option>
-              <option value="ASSIGNED">Assignée</option>
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              className="px-4 py-3 rounded-xl transition-all duration-300"
+              style={{
+                background: 'rgba(0, 0, 0, 0.3)',
+                border: '2px solid rgba(0, 180, 240, 0.3)',
+                color: '#FFFFFF',
+                outline: 'none'
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = '#00D4FF';
+                e.currentTarget.style.boxShadow = '0 0 20px rgba(0, 212, 255, 0.3)';
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = 'rgba(0, 180, 240, 0.3)';
+                e.currentTarget.style.boxShadow = 'none';
+              }}>
+              <option value="all" style={{ background: '#001440', color: '#FFFFFF' }}>Tous les statuts</option>
+              <option value="AVAILABLE" style={{ background: '#001440', color: '#FFFFFF' }}>Disponibles</option>
+              <option value="BUSY" style={{ background: '#001440', color: '#FFFFFF' }}>Occupés</option>
+              <option value="OFFLINE" style={{ background: '#001440', color: '#FFFFFF' }}>Hors ligne</option>
+              <option value="MAINTENANCE" style={{ background: '#001440', color: '#FFFFFF' }}>En maintenance</option>
             </select>
           </div>
         </div>
-      </div>
 
-      {/* Message d'erreur */}
-      {error && (
-        <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded-md shadow-sm">
-          <div className="flex items-center">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span className="font-medium">{error}</span>
-          </div>
-        </div>
-      )}
-
-      {/* État de chargement */}
-      {loading ? (
-        <div className="flex flex-col justify-center items-center h-64 bg-white rounded-xl shadow-md p-8">
-          <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500 mb-4"></div>
-          <p className="text-gray-600 text-lg animate-pulse">Chargement des tâches...</p>
-          <p className="text-gray-500 text-sm mt-2">Merci de patienter un instant</p>
-        </div>
-      ) : (
-        <>
-          {tasks.length === 0 ? (
-            <div className="bg-white rounded-xl p-12 text-center shadow-md border border-gray-100">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-20 w-20 mx-auto text-gray-400 mb-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+        {/* Error Message */}
+        {error && (
+          <div className="mb-6 p-4 rounded-xl backdrop-blur-xl" style={{
+            background: 'linear-gradient(135deg, rgba(220, 38, 38, 0.15) 0%, rgba(185, 28, 28, 0.05) 100%)',
+            border: '2px solid rgba(248, 113, 113, 0.3)',
+            boxShadow: '0 4px 16px rgba(220, 38, 38, 0.2)',
+            animation: 'slideIn 0.5s ease-out'
+          }}>
+            <div className="flex items-center">
+              <svg className="h-5 w-5 mr-2" style={{ color: '#F87171' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <h2 className="text-2xl font-medium text-gray-700 mb-3">Aucune tâche trouvée</h2>
-              <p className="text-gray-500 max-w-md mx-auto mb-6">
-                Vous n'avez pas encore de tâches. Les tâches sont créées lorsque vous soumettez un workflow ou que vous les créez manuellement.
-              </p>
-              <Link
-                href="/workflows"
-                className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-md text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-                </svg>
-                Voir les workflows
-              </Link>
+              <p style={{ color: '#F87171', fontSize: '14px', fontWeight: 500 }}>{error}</p>
             </div>
-          ) : (
-            <div className="bg-white shadow-md rounded-xl overflow-hidden">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Nom
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Workflow
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Statut
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Progression
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Volontaires
-                    </th>
+          </div>
+        )}
 
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {tasks.map((task) => (
-                    <tr key={task.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
+        {/* Loading */}
+        {loading ? (
+          <div className="flex flex-col items-center justify-center p-12 rounded-2xl backdrop-blur-xl"
+            style={{
+              background: 'linear-gradient(135deg, rgba(0, 32, 96, 0.6) 0%, rgba(0, 20, 64, 0.6) 100%)',
+              border: '2px solid rgba(0, 180, 240, 0.3)',
+              boxShadow: '0 4px 16px rgba(0, 32, 96, 0.3)'
+            }}>
+            <div className="w-16 h-16 rounded-full mb-4"
+              style={{
+                border: '4px solid rgba(0, 180, 240, 0.2)',
+                borderTopColor: '#00D4FF',
+                animation: 'spin 1s linear infinite'
+              }} />
+            <p style={{ color: '#00B0F0', fontSize: '16px', fontWeight: 500 }}>Chargement des volontaires...</p>
+          </div>
+        ) : filteredVolunteers.length === 0 ? (
+          <div className="text-center p-12 rounded-2xl backdrop-blur-xl"
+            style={{
+              background: 'linear-gradient(135deg, rgba(0, 32, 96, 0.6) 0%, rgba(0, 20, 64, 0.6) 100%)',
+              border: '2px solid rgba(0, 180, 240, 0.3)',
+              boxShadow: '0 4px 16px rgba(0, 32, 96, 0.3)'
+            }}>
+            <div className="w-20 h-20 mx-auto mb-6 rounded-2xl flex items-center justify-center"
+              style={{
+                background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.2) 0%, rgba(0, 180, 240, 0.1) 100%)',
+                border: '2px solid rgba(0, 212, 255, 0.3)'
+              }}>
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#00D4FF" strokeWidth="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+            </div>
+            <h2 style={{ 
+              color: '#FFFFFF', 
+              fontSize: '24px', 
+              fontWeight: 700, 
+              marginBottom: '12px',
+              letterSpacing: '0.3px'
+            }}>
+              Aucun volontaire trouvé
+            </h2>
+            <p style={{ color: '#00B0F0', fontSize: '14px' }}>
+              Essayez de modifier vos filtres de recherche
+            </p>
+          </div>
+        ) : (
+          <>
+            <div style={{ 
+              color: '#00B0F0', 
+              fontSize: '13px', 
+              marginBottom: '16px',
+              letterSpacing: '0.3px'
+            }}>
+              {filteredVolunteers.length} volontaire(s) trouvé(s)
+            </div>
+
+            {/* Volunteers Grid */}
+            <div className="grid grid-cols-1 gap-4">
+              {filteredVolunteers.map((volunteer) => {
+                const statusInfo = getStatusInfo(volunteer.status);
+                
+                return (
+                  <div key={volunteer.id}
+                    className="p-6 rounded-2xl backdrop-blur-xl transition-all duration-300"
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(0, 32, 96, 0.6) 0%, rgba(0, 20, 64, 0.6) 100%)',
+                      border: '2px solid rgba(0, 180, 240, 0.3)',
+                      boxShadow: '0 4px 16px rgba(0, 32, 96, 0.3)'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = '#00D4FF';
+                      e.currentTarget.style.transform = 'translateY(-4px)';
+                      e.currentTarget.style.boxShadow = '0 12px 40px rgba(0, 212, 255, 0.3)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = 'rgba(0, 180, 240, 0.3)';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 32, 96, 0.3)';
+                    }}>
+                    
+                    <div className="flex flex-col lg:flex-row lg:items-center gap-6">
+                      {/* Volunteer Info */}
+                      <div className="flex-1">
+                        <div className="flex items-center gap-4 mb-4">
+                          <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-xl font-bold"
+                            style={{
+                              background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.2) 0%, rgba(0, 180, 240, 0.1) 100%)',
+                              border: '2px solid rgba(0, 212, 255, 0.3)',
+                              color: '#00D4FF',
+                              boxShadow: '0 4px 12px rgba(0, 212, 255, 0.2)'
+                            }}>
+                            {volunteer.name.charAt(0).toUpperCase()}
+                          </div>
                           <div>
-                            <div className="text-sm font-medium text-gray-900">{task.name}</div>
-                            <div className="text-sm text-gray-500">{task.description?.substring(0, 50)}{task.description?.length > 50 ? '...' : ''}</div>
+                            <h3 style={{ 
+                              color: '#00D4FF', 
+                              fontSize: '20px', 
+                              fontWeight: 700, 
+                              letterSpacing: '0.3px' 
+                            }}>
+                              {volunteer.name}
+                            </h3>
+                            <div className="flex flex-wrap items-center gap-2 mt-1">
+                              <span style={{ color: '#00B0F0', fontSize: '14px' }}>{volunteer.hostname}</span>
+                              <span style={{ color: 'rgba(0, 180, 240, 0.5)' }}>•</span>
+                              <span style={{ color: '#00B0F0', fontSize: '14px' }}>{volunteer.ip_address}</span>
+                            </div>
                           </div>
                         </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{task.workflow_name || '-'}</div>
-                        <div className="text-sm text-gray-500">
-                          {task.workflow && (
-                            <Link href={`/workflows/${task.workflow}`} className="text-blue-600 hover:underline">
-                              Voir le workflow
-                            </Link>
+
+                        {/* Resources */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                          <div className="p-3 rounded-xl transition-all duration-200" 
+                            style={{ 
+                              background: 'rgba(0, 180, 240, 0.1)', 
+                              border: '1px solid rgba(0, 180, 240, 0.2)' 
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = 'rgba(0, 180, 240, 0.15)';
+                              e.currentTarget.style.borderColor = 'rgba(0, 180, 240, 0.4)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'rgba(0, 180, 240, 0.1)';
+                              e.currentTarget.style.borderColor = 'rgba(0, 180, 240, 0.2)';
+                            }}>
+                            <div style={{ color: '#00B0F0', fontSize: '11px', marginBottom: '4px', letterSpacing: '0.3px' }}>CPU Cores</div>
+                            <div style={{ color: '#FFFFFF', fontSize: '16px', fontWeight: 700 }}>{volunteer.cpu_cores}</div>
+                          </div>
+                          <div className="p-3 rounded-xl transition-all duration-200" 
+                            style={{ 
+                              background: 'rgba(0, 180, 240, 0.1)', 
+                              border: '1px solid rgba(0, 180, 240, 0.2)' 
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = 'rgba(0, 180, 240, 0.15)';
+                              e.currentTarget.style.borderColor = 'rgba(0, 180, 240, 0.4)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'rgba(0, 180, 240, 0.1)';
+                              e.currentTarget.style.borderColor = 'rgba(0, 180, 240, 0.2)';
+                            }}>
+                            <div style={{ color: '#00B0F0', fontSize: '11px', marginBottom: '4px', letterSpacing: '0.3px' }}>RAM</div>
+                            <div style={{ color: '#FFFFFF', fontSize: '16px', fontWeight: 700 }}>{volunteer.ram_mb} MB</div>
+                          </div>
+                          <div className="p-3 rounded-xl transition-all duration-200" 
+                            style={{ 
+                              background: 'rgba(0, 180, 240, 0.1)', 
+                              border: '1px solid rgba(0, 180, 240, 0.2)' 
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = 'rgba(0, 180, 240, 0.15)';
+                              e.currentTarget.style.borderColor = 'rgba(0, 180, 240, 0.4)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'rgba(0, 180, 240, 0.1)';
+                              e.currentTarget.style.borderColor = 'rgba(0, 180, 240, 0.2)';
+                            }}>
+                            <div style={{ color: '#00B0F0', fontSize: '11px', marginBottom: '4px', letterSpacing: '0.3px' }}>Disque</div>
+                            <div style={{ color: '#FFFFFF', fontSize: '16px', fontWeight: 700 }}>{volunteer.disk_gb} GB</div>
+                          </div>
+                          {volunteer.gpu && (
+                            <div className="p-3 rounded-xl transition-all duration-200" 
+                              style={{ 
+                                background: 'rgba(0, 212, 255, 0.15)', 
+                                border: '1px solid rgba(0, 212, 255, 0.3)' 
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = 'rgba(0, 212, 255, 0.2)';
+                                e.currentTarget.style.borderColor = 'rgba(0, 212, 255, 0.5)';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = 'rgba(0, 212, 255, 0.15)';
+                                e.currentTarget.style.borderColor = 'rgba(0, 212, 255, 0.3)';
+                              }}>
+                              <div style={{ color: '#00D4FF', fontSize: '11px', marginBottom: '4px', letterSpacing: '0.3px' }}>GPU</div>
+                              <div style={{ color: '#FFFFFF', fontSize: '16px', fontWeight: 700 }}>{volunteer.gpu}</div>
+                            </div>
                           )}
                         </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusClass(task.status)}`}>
-                          {task.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="w-full bg-gray-200 rounded-full h-2.5">
-                          <div className="bg-blue-600 h-2.5 rounded-full" style={{ width: `${task.progress}%` }}></div>
+
+                        {/* Tags */}
+                        <div className="flex flex-wrap gap-2">
+                          <span className="px-3 py-1 rounded-full text-xs font-semibold"
+                            style={{ 
+                              background: statusInfo.bg, 
+                              color: statusInfo.color, 
+                              border: `1px solid ${statusInfo.color}40`,
+                              letterSpacing: '0.3px'
+                            }}>
+                            {statusInfo.icon} {statusInfo.label}
+                          </span>
+                          <span className="px-3 py-1 rounded-full text-xs font-semibold"
+                            style={{ 
+                              background: volunteer.available ? 'rgba(0, 255, 136, 0.15)' : 'rgba(255, 165, 0, 0.15)', 
+                              color: volunteer.available ? '#00FF88' : '#FFA500',
+                              border: volunteer.available ? '1px solid rgba(0, 255, 136, 0.3)' : '1px solid rgba(255, 165, 0, 0.3)',
+                              letterSpacing: '0.3px'
+                            }}>
+                            {volunteer.available ? '✓ Disponible' : '✗ Non disponible'}
+                          </span>
+                          <span className="px-3 py-1 rounded-full text-xs font-semibold"
+                            style={{ 
+                              background: 'rgba(138, 43, 226, 0.15)', 
+                              color: '#BA7FFF', 
+                              border: '1px solid rgba(138, 43, 226, 0.3)',
+                              letterSpacing: '0.3px'
+                            }}>
+                            {volunteer.assigned_tasks_count || 0} tâche(s)
+                          </span>
+                          <span className="px-3 py-1 rounded-full text-xs font-semibold"
+                            style={{ 
+                              background: 'rgba(0, 180, 240, 0.1)', 
+                              color: '#00B0F0', 
+                              border: '1px solid rgba(0, 180, 240, 0.3)',
+                              letterSpacing: '0.3px'
+                            }}>
+                            {new Date(volunteer.last_seen).toLocaleString('fr-FR', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </span>
                         </div>
-                        <p className="text-xs text-gray-500 mt-1">{task.progress || 0}%</p>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-100 text-purple-800">
-                          {task.volunteer_count || 0} volontaire(s)
-                        </span>
-                      </td>
-                      
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex lg:flex-col gap-2">
+                        <Link href={`/volunteers/${volunteer.id}`}
+                          className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-300 whitespace-nowrap"
+                          style={{
+                            background: 'rgba(0, 212, 255, 0.1)',
+                            color: '#00D4FF',
+                            border: '2px solid rgba(0, 212, 255, 0.3)'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'rgba(0, 212, 255, 0.2)';
+                            e.currentTarget.style.borderColor = '#00D4FF';
+                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 212, 255, 0.3)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'rgba(0, 212, 255, 0.1)';
+                            e.currentTarget.style.borderColor = 'rgba(0, 212, 255, 0.3)';
+                            e.currentTarget.style.boxShadow = 'none';
+                          }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                          Détails
+                        </Link>
+                        <Link href={`/volunteers/${volunteer.id}/tasks`}
+                          className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-300 whitespace-nowrap"
+                          style={{
+                            background: 'rgba(0, 180, 240, 0.1)',
+                            color: '#00B0F0',
+                            border: '2px solid rgba(0, 180, 240, 0.3)'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'rgba(0, 180, 240, 0.2)';
+                            e.currentTarget.style.borderColor = '#00B0F0';
+                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 180, 240, 0.3)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'rgba(0, 180, 240, 0.1)';
+                            e.currentTarget.style.borderColor = 'rgba(0, 180, 240, 0.3)';
+                            e.currentTarget.style.boxShadow = 'none';
+                          }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                          </svg>
+                          Tâches
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          )}
-        </>
-      )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
