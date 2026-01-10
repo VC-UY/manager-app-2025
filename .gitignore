@@ -1,0 +1,11 @@
+vir
+venv
+__pycache__
+.coordinator
+results
+
+*.xlsx
+*.csv
+
+*.xml
+
