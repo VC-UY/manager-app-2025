@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -205,7 +206,8 @@ MANAGER_HOST = 'localhost'  # Change this to your actual host
 
 
 # --- REDIS CONFIG ---
-REDIS_PROXY_HOST = 'localhost'  # Proxy Redis
-REDIS_PROXY_PORT = 6380  # Port du proxy Redis
+# Utiliser une variable d'environnement pour l'hôte du coordinator (défaut: localhost)
+REDIS_PROXY_HOST = os.environ.get('COORDINATOR_HOST', 'localhost')  # Proxy Redis
+REDIS_PROXY_PORT = int(os.environ.get('COORDINATOR_PROXY_PORT', '6380'))  # Port du proxy Redis
 REDIS_DB = 0
 REDIS_CHANNELS = []

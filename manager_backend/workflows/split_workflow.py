@@ -354,7 +354,7 @@ def generate_openmalaria_scenario(population_size, output_dir, shard_id):
       <EIRDaily>0.3815</EIRDaily>
       <EIRDaily>0.3815</EIRDaily>
       <EIRDaily>0.0629</EIRDaily>
-      <EIRDaily>0.0629</EIRDaily>
+      <EIRDaily>0.0629</EIRDaily>generate_openmalaria_scenario
       <EIRDaily>0.0629</EIRDaily>
       <EIRDaily>0.0629</EIRDaily>
       <EIRDaily>0.0629</EIRDaily>

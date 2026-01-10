@@ -120,6 +120,9 @@ daphne -b 0.0.0.0 -p 8001 websocket_service.asgi:application
 
 daphne manager_backend.asgi:application -p 8003 -b 0.0.0.0
 
+daphne -b 0.0.0.0 -p 8000 coordinator_project.asgi:application
+
+
 ```
 
 
@@ -167,6 +170,10 @@ cd manager_frontend
 
 # Lancer le serveur de développement
 npm run dev
+
+
+# lancer le volontaire
+daphne backend.asgi:application -p 8003 -b 0.0.0.0
 ```
 
 ### 🌐 **Accéder aux Applications**
