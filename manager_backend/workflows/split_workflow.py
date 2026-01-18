@@ -1252,9 +1252,11 @@ def split_openmalaria_workflow(workflow_instance: Workflow, num_tasks: int, popu
     input_dir = os.path.join(workflow_instance.executable_path, "inputs")
     min_resources = get_min_volunteer_resources()
     
+    # Utiliser l'image Docker officielle OpenMalaria de Swiss TPH
+    # https://hub.docker.com/r/swisstph/openmalaria
     docker_img = {
-        "name": "malaria-exp",
-        "tag": "latest"
+        "name": "swisstph/openmalaria",
+        "tag": "46.0"
     }
     
     tasks = []
@@ -1274,7 +1276,7 @@ def split_openmalaria_workflow(workflow_instance: Workflow, num_tasks: int, popu
             workflow=workflow_instance,
             name=f"OpenMalaria Shard {i}",
             description=f"Simulation OpenMalaria sur population {population_per_task}",
-            command="/openmalaria/build/openMalaria -s /input/scenario.xml  -o /output/output.txt",
+            command="openMalaria --scenario /input/scenario.xml",
             parameters=[],
             input_files=[f"shard_{i}/scenario.xml"],
             output_files=[f"shard_{i}/output/output.txt"],
@@ -1301,28 +1303,96 @@ def split_openmalaria_workflow(workflow_instance: Workflow, num_tasks: int, popu
     return tasks
 
 
+def _create_single_task_workflow(workflow_instance: Workflow, logger: logging.Logger):
+    """
+    Crée une tâche unique pour les types de workflow non encore implémentés.
+
+    Args:
+        workflow_instance (Workflow): Instance du workflow.
+        logger (logging.Logger): Logger pour les messages.
+
+    Returns:
+        list: Liste contenant une seule tâche.
+    """
+    min_resources = get_min_volunteer_resources()
+
+    docker_img = {
+        "name": workflow_instance.metadata.get('docker_image', 'ubuntu:latest') if workflow_instance.metadata else 'ubuntu:latest',
+        "tag": workflow_instance.metadata.get('docker_tag', 'latest') if workflow_instance.metadata else 'latest'
+    }
+
+    command = workflow_instance.metadata.get('command', 'echo "Task executed"') if workflow_instance.metadata else 'echo "Task executed"'
+
+    task = Task.objects.create(
+        workflow=workflow_instance,
+        name=f"{workflow_instance.name} - Task 1",
+        description=f"Tâche principale pour {workflow_instance.name}",
+        command=command,
+        parameters=workflow_instance.metadata.get('parameters', []) if workflow_instance.metadata else [],
+        input_files=workflow_instance.metadata.get('input_files', []) if workflow_instance.metadata else [],
+        output_files=workflow_instance.metadata.get('output_files', []) if workflow_instance.metadata else [],
+        status=TaskStatus.CREATED,
+        parent_task=None,
+        is_subtask=False,
+        progress=0,
+        start_time=None,
+        docker_info=docker_img,
+        required_resources={
+            "cpu": min_resources["min_cpu"],
+            "ram": min_resources["min_ram"],
+            "disk": min_resources["disk"],
+        },
+        estimated_max_time=workflow_instance.max_execution_time or 3600,
+    )
+    task.input_size = workflow_instance.input_data_size or 0
+    task.save()
+
+    workflow_instance.tasks.add(task)
+    workflow_instance.save()
+
+    logger.info(f"Tâche unique créée: {task.name}")
+    return [task]
+
+
 def split_workflow(id: uuid.UUID, workflow_type: WorkflowType, logger, num_tasks: int = None, population_per_task: int = None):
     """
     Découpe un workflow en tâches plus petites selon le type de workflow.
-    
+
     Args:
         id (uuid.UUID): ID du workflow à découper.
         workflow_type (WorkflowType): Type du workflow.
         logger: Logger pour les messages.
-        num_tasks (int, optional): Nombre de tâches pour OpenMalaria.
-        population_per_task (int, optional): Taille de la population par tâche pour OpenMalaria.
-    
+        num_tasks (int, optional): Nombre de tâches pour OpenMalaria (récupéré de metadata si non fourni).
+        population_per_task (int, optional): Taille de la population par tâche pour OpenMalaria (récupéré de metadata si non fourni).
+
     Returns:
         list: Liste des tâches créées.
     """
     workflow_instance = Workflow.objects.get(id=id)
-    
+
     if workflow_type == WorkflowType.ML_TRAINING:
         tasks = split_ml_training_workflow(workflow_instance, logger)
     elif workflow_type == WorkflowType.OPEN_MALARIA:
-        if num_tasks is None or population_per_task is None:
-            raise ValueError("num_tasks et population_per_task doivent être spécifiés pour OpenMalaria")
+        # Récupérer les paramètres depuis metadata si non fournis
+        if num_tasks is None:
+            num_tasks = workflow_instance.metadata.get('num_tasks', 4) if workflow_instance.metadata else 4
+            logger.info(f"num_tasks récupéré depuis metadata: {num_tasks}")
+        if population_per_task is None:
+            population_per_task = workflow_instance.metadata.get('population_per_task', 1000) if workflow_instance.metadata else 1000
+            logger.info(f"population_per_task récupéré depuis metadata: {population_per_task}")
         tasks = split_openmalaria_workflow(workflow_instance, num_tasks, population_per_task, logger)
+    elif workflow_type in [WorkflowType.MATRIX_ADDITION, WorkflowType.MATRIX_MULTIPLICATION]:
+        # TODO: Implémenter le split pour les opérations matricielles
+        logger.warning(f"Type de workflow {workflow_type} non encore implémenté, création d'une tâche unique")
+        tasks = _create_single_task_workflow(workflow_instance, logger)
+    elif workflow_type == WorkflowType.ML_INFERENCE:
+        # TODO: Implémenter le split pour l'inférence ML
+        logger.warning(f"Type de workflow ML_INFERENCE non encore implémenté, création d'une tâche unique")
+        tasks = _create_single_task_workflow(workflow_instance, logger)
+    elif workflow_type == WorkflowType.CUSTOM:
+        # Pour les workflows custom, créer une tâche unique par défaut
+        logger.info("Workflow CUSTOM: création d'une tâche unique")
+        tasks = _create_single_task_workflow(workflow_instance, logger)
     else:
         raise ValueError(f"Type de workflow non supporté: {workflow_type}")
     

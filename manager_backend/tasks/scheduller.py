@@ -194,8 +194,26 @@ def random_assigment_algorithm( tasks: list, volunteers: list) -> dict:
 
 
 
-# Chemin du modèle
-MODEL_PATH = "/home/sergeo/Master-II/Recherches/Projet_M_I/Groupe B  ManagerApp/v2/manager_backend/tasks/grok/tasks/grok/models/a3c_model_checkpoint_0.pth"
+# Chemin du modèle A3C - utilise un chemin relatif ou configurable
+import os
+from django.conf import settings
+
+# Essayer plusieurs chemins possibles pour le modèle A3C
+_MODEL_PATHS = [
+    os.path.join(settings.BASE_DIR, 'tasks', 'grok', 'models', 'a3c_model_checkpoint_0.pth'),
+    os.path.join(settings.BASE_DIR, 'tasks', 'grok', 'tasks', 'grok', 'models', 'a3c_model_checkpoint_0.pth'),
+    '/home/sergeo/Master-II/Recherches/Projet_M_I/Groupe B  ManagerApp/v2/manager_backend/tasks/grok/tasks/grok/models/a3c_model_checkpoint_0.pth',
+]
+
+MODEL_PATH = None
+for path in _MODEL_PATHS:
+    if os.path.exists(path):
+        MODEL_PATH = path
+        logger.info(f"Modèle A3C trouvé: {path}")
+        break
+
+if MODEL_PATH is None:
+    logger.warning("Modèle A3C non trouvé. L'algorithme A3C utilisera FCFS comme fallback.")
 
 class ActorCriticNet(nn.Module):
     def __init__(self, input_dim, action_dim):
@@ -272,7 +290,13 @@ def load_model(model, model_path, expected_input_dim, expected_action_dim):
 def a3c_algorithm(tasks: list, volunteers: list, model_path: str = MODEL_PATH) -> dict:
     """
     Algorithme A3C pour assigner chaque tâche à un volontaire.
+    Utilise FCFS comme fallback si le modèle n'est pas disponible.
     """
+
+    # Vérifier si le modèle existe
+    if model_path is None or not os.path.exists(model_path):
+        logger.warning(f"Modèle A3C non trouvé ({model_path}). Utilisation de l'algorithme FCFS comme fallback.")
+        return fcfs_algorithm(tasks, volunteers)
 
     # Configuration
     MAX_TASKS = 500  # Capacité maximale
@@ -281,8 +305,8 @@ def a3c_algorithm(tasks: list, volunteers: list, model_path: str = MODEL_PATH) -
     EXPECTED_ACTION_DIM = MAX_TASKS * MAX_VOLUNTEERS  # 50000
 
     if len(tasks) > MAX_TASKS or len(volunteers) > MAX_VOLUNTEERS:
-        logger.error(f"Nombre de tâches ({len(tasks)}) ou volontaires ({len(volunteers)}) dépasse les limites maximales")
-        return {}
+        logger.warning(f"Nombre de tâches ({len(tasks)}) ou volontaires ({len(volunteers)}) dépasse les limites maximales. Utilisation de FCFS.")
+        return fcfs_algorithm(tasks, volunteers)
 
     # Log des ressources
     for t in tasks:

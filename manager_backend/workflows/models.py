@@ -97,10 +97,27 @@ class User(AbstractUser):
 
 
 def get_default_owner():
-    """Retourne l'ID de l'utilisateur par défaut qui est enregistré chez le coordinateur"""
-    default_user = User.objects.get(
-        remote_id__isnull=False
-    )
+    """Retourne l'utilisateur par défaut qui est enregistré chez le coordinateur.
+
+    Priorité :
+    1. Utilisateur avec remote_id (synchronisé avec le coordinateur)
+    2. Premier utilisateur disponible (fallback)
+    3. None si aucun utilisateur n'existe
+    """
+    # D'abord, chercher un utilisateur synchronisé avec le coordinateur
+    default_user = User.objects.filter(remote_id__isnull=False).first()
+
+    if default_user:
+        return default_user
+
+    # Fallback: retourner le premier utilisateur disponible
+    default_user = User.objects.first()
+
+    if default_user:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Aucun utilisateur synchronisé trouvé, utilisation de {default_user.username} comme propriétaire par défaut")
+
     return default_user
 
 

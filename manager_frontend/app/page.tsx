@@ -306,13 +306,13 @@ export default function Home() {
                   }}>
                   <div className="flex items-center gap-2 mb-2">
                     <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: '#00D4FF' }} />
-                    <span style={{ color: '#00B0F0', fontSize: '12px', fontWeight: 600 }}>Calcul en cours</span>
+                    <span style={{ color: '#00B0F0', fontSize: '12px', fontWeight: 600 }}>Système actif</span>
                   </div>
                   <div style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 700 }}>
-                    <span style={{ color: '#00D4FF' }}>248</span> volontaires actifs
+                    Réseau de <span style={{ color: '#00D4FF' }}>volontaires</span>
                   </div>
                   <div style={{ color: '#00B0F0', fontSize: '12px', marginTop: '4px' }}>
-                    +12% cette semaine
+                    Calcul distribué haute performance
                   </div>
                 </div>
               </div>
@@ -460,9 +460,9 @@ export default function Home() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {[
-              { value: '+300%', label: 'Augmentation des performances', color: '#00B0F0' },
-              { value: '-65%', label: 'Réduction du temps de calcul', color: '#00D4FF' },
-              { value: '∞', label: 'Évolutivité illimitée', color: '#00B0F0' }
+              { value: '⚡', label: 'Performances optimisées', color: '#00B0F0' },
+              { value: '🚀', label: 'Calculs accélérés', color: '#00D4FF' },
+              { value: '📈', label: 'Évolutivité flexible', color: '#00B0F0' }
             ].map((stat, idx) => (
               <div key={idx} className="p-8 rounded-2xl text-center transition-all duration-300"
                 style={{
@@ -729,7 +729,7 @@ export default function Home() {
                 </div>
               </div>
               <p className="mt-4 text-xs" style={{ color: '#00B0F0', opacity: 0.7 }}>
-                © 2025 VolunSys-UY1. Tous droits réservés.
+                © {new Date().getFullYear()} VolunSys-UY1. Tous droits réservés.
               </p>
             </div>
             

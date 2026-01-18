@@ -124,8 +124,14 @@ def start_file_server(workflow: Workflow, port: int = 0) -> int:
         return active_servers[workflow_id]['port']
     
     # Déterminer le répertoire de base pour les fichiers du workflow
-    workflow_base_dir = workflow.input_path
+    # Les fichiers d'entrée sont générés dans {executable_path}/inputs/
+    if workflow.executable_path:
+        workflow_base_dir = os.path.join(workflow.executable_path, "inputs")
+    else:
+        workflow_base_dir = workflow.input_path
     
+    logger.info(f"Répertoire de base du serveur de fichiers: {workflow_base_dir}")
+
     if not os.path.exists(workflow_base_dir):
         os.makedirs(workflow_base_dir)
         logger.warning(f"Le répertoire du workflow {workflow_id} n'existe pas, il a été créé: {workflow_base_dir}")

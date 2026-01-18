@@ -207,7 +207,8 @@ MANAGER_HOST = 'localhost'  # Change this to your actual host
 
 # --- REDIS CONFIG ---
 # Utiliser une variable d'environnement pour l'hôte du coordinator (défaut: localhost)
-REDIS_PROXY_HOST = os.environ.get('COORDINATOR_HOST', 'localhost')  # Proxy Redis
-REDIS_PROXY_PORT = int(os.environ.get('COORDINATOR_PROXY_PORT', '6380'))  # Port du proxy Redis
+REDIS_PROXY_HOST = '173.249.38.251'  # Adresse IP du serveur Redis distant
+ # Proxy Redis
+REDIS_PROXY_PORT = '6380'  # Port du proxy Redis
 REDIS_DB = 0
 REDIS_CHANNELS = []

@@ -152,77 +152,20 @@ def submit_workflow_view(request, workflow_id):
                     # Assigner les tâches
                     assignment_result = assign_workflow_to_volunteers(workflow, response.get('volunteers'))
                     thread_logger.info(f"Résultat de l'assignation: {assignment_result}")
-                    
-                    # Préparer les informations du serveur de fichiers pour chaque tâche
-                    file_server_info = {
-                        'base_url': file_server_url,
-                        'workflow_id': str(workflow_id)
-                    }
-                    
-                    # Préparer les données d'assignation pour les volontaires
-                    assignments_by_volunteer = {}
-                    
-                    # Parcourir les assignations et les regrouper par volontaire
-                    for task_id, volunteer_id in assignment_result.get('assignments', {}).items():
-                        if volunteer_id not in assignments_by_volunteer:
-                            assignments_by_volunteer[volunteer_id] = []
-                        
-                        # Récupérer la tâche
-                        from tasks.models import Task
-                        task = Task.objects.get(id=task_id)
-                        
-                        # Préparer les informations de fichiers d'entrée
-                        input_files = []
-                        if task.input_files:
-                            for file_path in task.input_files:
-                                input_files.append({
-                                    'path': file_path,
-                                    'size': 0  
-                                })
-                        
-                        # Créer les données de la tâche pour ce volontaire
-                        task_data = {
-                            'task_id': str(task.id),
-                            'name': task.name,
-                            'parameters': task.parameters,
-                            'input_data': {
-                                'files': input_files,
-                                'file_server': file_server_info
-                            },
-                            'estimated_execution_time': task.estimated_max_time,
-                            'docker_information': task.docker_info or {}
-                        }
-                        
-                        assignments_by_volunteer[volunteer_id].append(task_data)
-                    
-                    # Envoyer les assignations aux volontaires
-                    redis_client = RedisClient.get_instance()
-                    for volunteer_id, tasks_data in assignments_by_volunteer.items():
-                        thread_logger.info(f"Envoi de {len(tasks_data)} tâches au volontaire {volunteer_id}")
-                        
-                        # Préparer le message d'assignation
-                        assignment_message = {
-                            'workflow_id': str(workflow_id),
-                            'assignments': {
-                                volunteer_id: tasks_data
-                            }
-                        }
-                        
-                        # Publier le message d'assignation
-                        redis_client.publish('task/assignment', assignment_message)
-                    
-                    # Notifier la fin de l'assignation
-                    notify_event('workflow_status_change', {
-                        'workflow_id': str(workflow_id),
-                        'status': 'ASSIGNED',
-                        'message': 'Tâches attribuées avec succès'
-                    })
 
-                    # Démarrer le serveur de fichiers local pour servir les fichiers d'entrée
-                    thread_logger.info(f"Démarrage du serveur de fichiers local")
-                    from tasks.file_server import start_file_server
-                    file_server_port = start_file_server(workflow)
-                    thread_logger.info(f"Serveur de fichiers démarré sur le port {file_server_port}")
+                    # Vérifier si des tâches ont été assignées
+                    if not assignment_result:
+                        thread_logger.warning("Aucune tâche n'a été assignée aux volontaires")
+                        notify_event('workflow_status_change', {
+                            'workflow_id': str(workflow_id),
+                            'status': 'ASSIGNMENT_FAILED',
+                            'message': 'Aucune tâche assignée aux volontaires'
+                        })
+                        return
+
+                    # Utiliser le serveur de fichiers déjà démarré (server_port)
+                    file_server_port = server_port
+                    thread_logger.info(f"Utilisation du serveur de fichiers sur le port {file_server_port}")
                     
                     # Préparer les informations de tâches complètes pour chaque volontaire
                     thread_logger.info(f"Préparation des informations de tâches pour chaque volontaire")
@@ -294,6 +237,21 @@ def submit_workflow_view(request, workflow_id):
                         get_manager_login_token(),
                         'request'
                     )
+
+                    # Compter les tâches assignées
+                    total_tasks_assigned = sum(len(tasks) for tasks in enriched_assignments.values())
+                    thread_logger.info(f"Publication réussie: {total_tasks_assigned} tâches envoyées à {len(enriched_assignments)} volontaires")
+
+                    # Mettre à jour le statut du workflow à PENDING (en attente d'exécution)
+                    workflow.status = WorkflowStatus.PENDING
+                    workflow.save()
+
+                    # Notifier la fin de l'assignation
+                    notify_event('workflow_status_change', {
+                        'workflow_id': str(workflow_id),
+                        'status': 'PENDING',
+                        'message': f'{total_tasks_assigned} tâches attribuées à {len(enriched_assignments)} volontaires'
+                    })
                 else:
                     thread_logger.info(f"Aucun volontaire reçu, lancement de l'écoute sur le canal d'assignment")
                     pubsub = RedisClient.get_instance()

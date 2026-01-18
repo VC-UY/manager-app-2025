@@ -13,6 +13,7 @@ from .serializers import (
     VolunteerDetailSerializer,
     TaskWithVolunteerCountSerializer,
     TaskSerializer,
+    VolunteerTaskDetailSerializer,
 )
 
 class VolunteerViewSet(viewsets.ModelViewSet):
@@ -153,14 +154,43 @@ class VolunteerTaskViewSet(viewsets.ModelViewSet):
         volunteer_id = request.query_params.get('volunteer_id')
         if not volunteer_id:
             return Response(
-                {"error": "Volunteer ID is required"}, 
+                {"error": "Volunteer ID is required"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         volunteer_tasks = VolunteerTask.objects.filter(volunteer__id=volunteer_id)
         serializer = self.get_serializer(volunteer_tasks, many=True)
-        
+
         return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def by_coordinator_volunteer_id(self, request):
+        """
+        Récupérer toutes les tâches assignées à un volontaire en utilisant son coordinator_volunteer_id.
+        Cet endpoint est utilisé par les volontaires pour récupérer leurs tâches via HTTP.
+        Retourne uniquement les tâches actives (non terminées, non annulées).
+        """
+        coordinator_volunteer_id = request.query_params.get('coordinator_volunteer_id')
+        if not coordinator_volunteer_id:
+            return Response(
+                {"error": "coordinator_volunteer_id is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            volunteer = Volunteer.objects.get(coordinator_volunteer_id=coordinator_volunteer_id)
+        except Volunteer.DoesNotExist:
+            # Si le volontaire n'existe pas, retourner une liste vide plutôt qu'une erreur
+            return Response({"tasks": []}, status=status.HTTP_200_OK)
+
+        # Récupérer uniquement les tâches actives (pas COMPLETED, FAILED, EXPIRED, CANCEL)
+        volunteer_tasks = VolunteerTask.objects.filter(
+            volunteer=volunteer,
+            status__in=['ASSIGNED', 'ACCEPTED', 'STARTED', 'RUNNING', 'PAUSED']
+        ).select_related('task', 'task__workflow')
+
+        serializer = VolunteerTaskDetailSerializer(volunteer_tasks, many=True)
+        return Response({"tasks": serializer.data})
 
     @action(detail=True, methods=['post'])
     def update_progress(self, request, pk=None):

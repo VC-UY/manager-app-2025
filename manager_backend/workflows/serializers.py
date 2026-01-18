@@ -5,6 +5,11 @@ from django.contrib.auth.password_validation import validate_password
 
 from django.contrib.auth import get_user_model
 import traceback
+import logging
+
+from redis_communication.auth_client import register_manager
+
+logger = logging.getLogger(__name__)
 
 User = get_user_model()
 
@@ -123,26 +128,60 @@ class RegisterSerializer(serializers.ModelSerializer):
     
     def create(self, validated_data):
         """
-        Crée un nouvel utilisateur avec les données validées.
+        Crée un nouvel utilisateur avec les données validées et le synchronise avec le coordinateur.
         """
         try:
             # Supprimer le champ de confirmation du mot de passe
             validated_data.pop('password2', None)
-            
-            print(f"[DEBUG] Création d'utilisateur avec email: {validated_data.get('email')}, "
+
+            logger.info(f"Création d'utilisateur avec email: {validated_data.get('email')}, "
                   f"username: {validated_data.get('username')}")
-            
+
             # Créer l'utilisateur avec create_user pour hasher le mot de passe
             user = User.objects.create_user(
                 email=validated_data['email'],
                 username=validated_data['username'],
-                password=validated_data['password']
+                password=validated_data['password'],
+                first_name=validated_data.get('first_name', ''),
+                last_name=validated_data.get('last_name', '')
             )
-            
-            print(f"[DEBUG] Utilisateur créé avec succès, ID: {user.id}")
+
+            logger.info(f"Utilisateur créé localement avec succès, ID: {user.id}")
+
+            # Synchroniser avec le coordinateur
+            try:
+                logger.info(f"Synchronisation de l'utilisateur {user.username} avec le coordinateur...")
+                success, response = register_manager(
+                    username=user.username,
+                    email=user.email,
+                    password=validated_data['password'],  # Mot de passe en clair pour le coordinateur
+                    first_name=validated_data.get('first_name', ''),
+                    last_name=validated_data.get('last_name', ''),
+                    timeout=30
+                )
+
+                if success:
+                    # Stocker le remote_id (manager_id) retourné par le coordinateur
+                    remote_id = response.get('manager_id')
+                    if remote_id:
+                        user.remote_id = remote_id
+                        user.save()
+                        logger.info(f"Utilisateur synchronisé avec le coordinateur, remote_id: {remote_id}")
+                    else:
+                        logger.warning(f"Enregistrement réussi mais pas de manager_id dans la réponse: {response}")
+                else:
+                    logger.warning(f"Échec de la synchronisation avec le coordinateur: {response.get('message', 'Erreur inconnue')}")
+                    # L'utilisateur est créé localement même si la synchro échoue
+                    # Il pourra être synchronisé plus tard
+
+            except Exception as sync_error:
+                logger.error(f"Erreur lors de la synchronisation avec le coordinateur: {sync_error}")
+                # Ne pas échouer la création de l'utilisateur si la synchro échoue
+                # L'utilisateur peut être synchronisé manuellement plus tard
+
             return user
-            
+
         except Exception as e:
-            print(f"[ERROR] Erreur lors de la création de l'utilisateur: {str(e)}")
-            print(traceback.format_exc())
+            logger.error(f"Erreur lors de la création de l'utilisateur: {str(e)}")
+            logger.error(traceback.format_exc())
             raise serializers.ValidationError(f"Erreur lors de la création de l'utilisateur: {str(e)}")

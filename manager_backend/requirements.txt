@@ -32,4 +32,5 @@ Twisted==24.11.0
 txaio==23.1.1
 typing_extensions==4.13.2
 zope.interface==7.2
-numpy
+numpy>=1.24.0
+#torch>=2.0.0

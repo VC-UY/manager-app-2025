@@ -1,12 +1,5 @@
 from collections.abc import Sequence  # noqa: F811
-from typing import (
-    Any,
-    Protocol,
-    TypeAlias,
-    TypedDict,
-    TypeVar,
-    runtime_checkable,
-)
+from typing import Any, Protocol, TypeAlias, TypedDict, TypeVar
 
 import numpy as np
 
@@ -26,6 +19,7 @@ from ._char_codes import (
 )
 
 _ScalarT = TypeVar("_ScalarT", bound=np.generic)
+_DTypeT = TypeVar("_DTypeT", bound=np.dtype)
 _DTypeT_co = TypeVar("_DTypeT_co", bound=np.dtype, covariant=True)
 
 _DTypeLikeNested: TypeAlias = Any  # TODO: wait for support for recursive types
@@ -47,11 +41,17 @@ class _DTypeDict(_DTypeDictBase, total=False):
     aligned: bool
 
 
-# A protocol for anything with the dtype attribute
-@runtime_checkable
-class _SupportsDType(Protocol[_DTypeT_co]):
+class _HasDType(Protocol[_DTypeT_co]):
     @property
     def dtype(self) -> _DTypeT_co: ...
+
+
+class _HasNumPyDType(Protocol[_DTypeT_co]):
+    @property
+    def __numpy_dtype__(self, /) -> _DTypeT_co: ...
+
+
+_SupportsDType: TypeAlias = _HasDType[_DTypeT] | _HasNumPyDType[_DTypeT]
 
 
 # A subset of `npt.DTypeLike` that can be parametrized w.r.t. `np.generic`
@@ -104,7 +104,7 @@ _DTypeLikeObject: TypeAlias = type[object] | _DTypeLike[np.object_] | _ObjectCod
 
 # Anything that can be coerced into numpy.dtype.
 # Reference: https://docs.scipy.org/doc/numpy/reference/arrays.dtypes.html
-DTypeLike: TypeAlias = _DTypeLike[Any] | _VoidDTypeLike | str | None
+DTypeLike: TypeAlias = _DTypeLike[Any] | _VoidDTypeLike | str
 
 # NOTE: while it is possible to provide the dtype as a dict of
 # dtype-like objects (e.g. `{'field1': ..., 'field2': ..., ...}`),

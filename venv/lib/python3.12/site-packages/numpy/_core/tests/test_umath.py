@@ -1,4 +1,5 @@
 import fnmatch
+import inspect
 import itertools
 import operator
 import platform
@@ -12,8 +13,7 @@ import pytest
 
 import numpy as np
 import numpy._core.umath as ncu
-from numpy._core import _umath_tests as ncu_tests
-from numpy._core import sctypes
+from numpy._core import _umath_tests as ncu_tests, sctypes
 from numpy.testing import (
     HAS_REFCOUNT,
     IS_MUSL,
@@ -31,7 +31,6 @@ from numpy.testing import (
     assert_no_warnings,
     assert_raises,
     assert_raises_regex,
-    suppress_warnings,
 )
 from numpy.testing._private.utils import _glibc_older_than
 
@@ -704,8 +703,8 @@ class TestDivision:
         fone = np.array(1.0, dtype=dtype)
         fzer = np.array(0.0, dtype=dtype)
         finf = np.array(np.inf, dtype=dtype)
-        with suppress_warnings() as sup:
-            sup.filter(RuntimeWarning, "invalid value encountered in floor_divide")
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore', "invalid value encountered in floor_divide", RuntimeWarning)
             div = np.floor_divide(fnan, fone)
             assert np.isnan(div), f"div: {div}"
             div = np.floor_divide(fone, fnan)
@@ -860,9 +859,9 @@ class TestRemainder:
             fone = np.array(1.0, dtype=dt)
             fzer = np.array(0.0, dtype=dt)
             finf = np.array(np.inf, dtype=dt)
-            with suppress_warnings() as sup:
-                sup.filter(RuntimeWarning, "invalid value encountered in divmod")
-                sup.filter(RuntimeWarning, "divide by zero encountered in divmod")
+            with warnings.catch_warnings():
+                warnings.filterwarnings('ignore', "invalid value encountered in divmod", RuntimeWarning)
+                warnings.filterwarnings('ignore', "divide by zero encountered in divmod", RuntimeWarning)
                 div, rem = np.divmod(fone, fzer)
                 assert np.isinf(div), f'dt: {dt}, div: {rem}'
                 assert np.isnan(rem), f'dt: {dt}, rem: {rem}'
@@ -899,9 +898,9 @@ class TestRemainder:
             assert_(rem >= -b, f'dt: {dt}')
 
         # Check nans, inf
-        with suppress_warnings() as sup:
-            sup.filter(RuntimeWarning, "invalid value encountered in remainder")
-            sup.filter(RuntimeWarning, "invalid value encountered in fmod")
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore', "invalid value encountered in remainder", RuntimeWarning)
+            warnings.filterwarnings('ignore', "invalid value encountered in fmod", RuntimeWarning)
             for dt in np.typecodes['Float']:
                 fone = np.array(1.0, dtype=dt)
                 fzer = np.array(0.0, dtype=dt)
@@ -1879,11 +1878,15 @@ class TestSpecialFloats:
         # FIXME: NAN raises FP invalid exception:
         #  - ceil/float16 on MSVC:32-bit
         #  - spacing/float16 on almost all platforms
-        #  - spacing all floats on MSVC vs2022
-        if ufunc == np.spacing:
+        #  - spacing/float32,float64 on Windows MSVC with VS2022
+        if ufunc in (np.spacing, np.ceil) and dtype == 'e':
             return
-        if ufunc == np.ceil and dtype == 'e':
-            return
+        # Skip spacing tests with NaN on Windows MSVC (all dtypes)
+        import platform
+        if (ufunc == np.spacing and
+            platform.system() == 'Windows' and
+            any(np.isnan(d) if isinstance(d, (int, float)) else False for d in data)):
+            pytest.skip("spacing with NaN generates warnings on Windows/VS2022")
         array = np.array(data, dtype=dtype)
         with assert_no_warnings():
             ufunc(array)
@@ -2954,9 +2957,11 @@ class TestMinMax:
                     inp[:] = np.arange(inp.size, dtype=dt)
                     inp[i] = np.nan
                     emsg = lambda: f'{inp!r}\n{msg}'
-                    with suppress_warnings() as sup:
-                        sup.filter(RuntimeWarning,
-                                   "invalid value encountered in reduce")
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings(
+                            'ignore',
+                            "invalid value encountered in reduce",
+                            RuntimeWarning)
                         assert_(np.isnan(inp.max()), msg=emsg)
                         assert_(np.isnan(inp.min()), msg=emsg)
 
@@ -3152,7 +3157,8 @@ class TestSpecialMethods:
         do_test(lambda a: np.add(0, 0, out=(a,)), lambda a: (0, 0, a))
 
         # Also check the where mask handling:
-        do_test(lambda a: np.add(a, 0, where=False), lambda a: (a, 0))
+        out = np.zeros([1], dtype=float)
+        do_test(lambda a: np.add(a, 0, where=False, out=None), lambda a: (a, 0))
         do_test(lambda a: np.add(0, 0, a, where=False), lambda a: (0, 0, a))
 
     def test_wrap_with_iterable(self):
@@ -3709,7 +3715,7 @@ class TestSpecialMethods:
 
                 kwargs = kwargs.copy()
                 if "out" in kwargs:
-                    kwargs["out"] = self._unwrap(kwargs["out"])
+                    kwargs["out"] = self._unwrap(kwargs["out"])[0]
                     if kwargs["out"] is NotImplemented:
                         return NotImplemented
 
@@ -3740,21 +3746,28 @@ class TestSpecialMethods:
 
         array = np.array([1, 2, 3])
         where = np.array([True, False, True])
-        expected = ufunc(array, where=where)
+        out = np.zeros(3, dtype=array.dtype)
+        expected = ufunc(array, where=where, out=out)
 
         with pytest.raises(TypeError):
-            ufunc(array, where=where.view(OverriddenArrayOld))
+            ufunc(
+                array,
+                where=where.view(OverriddenArrayOld),
+                out=out,
+            )
 
         result_1 = ufunc(
             array,
-            where=where.view(OverriddenArrayNew)
+            where=where.view(OverriddenArrayNew),
+            out=out,
         )
         assert isinstance(result_1, OverriddenArrayNew)
         assert np.all(np.array(result_1) == expected, where=where)
 
         result_2 = ufunc(
             array.view(OverriddenArrayNew),
-            where=where.view(OverriddenArrayNew)
+            where=where.view(OverriddenArrayNew),
+            out=out.view(OverriddenArrayNew),
         )
         assert isinstance(result_2, OverriddenArrayNew)
         assert np.all(np.array(result_2) == expected, where=where)
@@ -4034,12 +4047,15 @@ class TestSpecialMethods:
         res = a.__array_ufunc__(np.add, "__call__", a, a)
         assert_array_equal(res, a + a)
 
+    @pytest.mark.thread_unsafe(reason="modifies global module")
+    @pytest.mark.skipif(IS_PYPY, reason="__signature__ descriptor dance fails")
     def test_ufunc_docstring(self):
         original_doc = np.add.__doc__
         new_doc = "new docs"
         expected_dict = (
             {} if IS_PYPY else {"__module__": "numpy", "__qualname__": "add"}
         )
+        expected_dict["__signature__"] = inspect.signature(np.add)
 
         np.add.__doc__ = new_doc
         assert np.add.__doc__ == new_doc
@@ -4600,8 +4616,8 @@ def test_nextafter_0():
     for t, direction in itertools.product(np._core.sctypes['float'], (1, -1)):
         # The value of tiny for double double is NaN, so we need to pass the
         # assert
-        with suppress_warnings() as sup:
-            sup.filter(UserWarning)
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', UserWarning)
             if not np.isnan(np.finfo(t).tiny):
                 tiny = np.finfo(t).tiny
                 assert_(
@@ -4880,6 +4896,15 @@ def test_bad_legacy_ufunc_silent_errors():
         ncu_tests.always_error.at(arr, [0, 1, 2], arr)
 
 
+def test_bad_legacy_unary_ufunc_silent_errors():
+    # Unary has a special scalar path right now, so test it explicitly.
+    with pytest.raises(RuntimeError, match=r"How unexpected :\)!"):
+        ncu_tests.always_error_unary(np.arange(3).astype(np.float64))
+
+    with pytest.raises(RuntimeError, match=r"How unexpected :\)!"):
+        ncu_tests.always_error_unary(1.5)
+
+
 @pytest.mark.parametrize('x1', [np.arange(3.0), [0.0, 1.0, 2.0]])
 def test_bad_legacy_gufunc_silent_errors(x1):
     # Verify that an exception raised in a gufunc loop propagates correctly.
@@ -4926,3 +4951,12 @@ class TestAdd_newdoc_ufunc:
     @pytest.mark.filterwarnings("ignore:_add_newdoc_ufunc:DeprecationWarning")
     def test_string_arg(self):
         assert_raises(TypeError, ncu._add_newdoc_ufunc, np.add, 3)
+
+class TestHypotErrorMessages:
+    def test_hypot_error_message_single_arg(self):
+        with pytest.raises(TypeError, match="hypot\\(\\) takes .* but 1 was given"):
+            np.hypot(5)
+
+    def test_hypot_error_message_multiple_args(self):
+        with pytest.raises(TypeError, match="hypot\\(\\) takes .* but 4 were given"):
+            np.hypot(1, 2, 3, 4)
