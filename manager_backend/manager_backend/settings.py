@@ -80,6 +80,7 @@ CORS_ALLOW_ALL_ORIGINS = True  # En développement uniquement
 # --- URL & WSGI ---
 ROOT_URLCONF = 'manager_backend.urls'
 WSGI_APPLICATION = 'manager_backend.wsgi.application'
+ASGI_APPLICATION = "websocket_service.asgi.application"
 
 TEMPLATES = [
     {

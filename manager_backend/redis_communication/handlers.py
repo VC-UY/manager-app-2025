@@ -432,7 +432,7 @@ def handle_task_progress(channel: str, message: Message):
         # Mettre à jour la base de données locale
         try:
             from tasks.models import Task
-            task = Task.objects.filter(task_id=task_id).first()
+            task = Task.objects.filter(id=task_id).first()
             if task:
                 task.progress = progress
                 task.save(update_fields=['progress'])
@@ -490,7 +490,7 @@ def handle_task_status_update(channel: str, message: Message):
             from tasks.models import Task
             from workflows.models import Workflow
 
-            task = Task.objects.filter(task_id=task_id).first()
+            task = Task.objects.filter(id=task_id).first()
             if task:
                 # Mapper les statuts
                 status_map = {
@@ -503,7 +503,13 @@ def handle_task_status_update(channel: str, message: Message):
                     'cancel': 'CANCELLED',
                 }
                 task.status = status_map.get(status, status.upper())
-                task.save(update_fields=['status'])
+                
+                # Si la tâche est terminée, forcer la progression à 100%
+                if task.status == 'COMPLETED':
+                    task.progress = 100.0
+                    task.save(update_fields=['status', 'progress'])
+                else:
+                    task.save(update_fields=['status'])
 
                 # Si completed, mettre à jour le workflow si toutes les tâches sont terminées
                 if status == 'completed' and workflow_id:
@@ -604,7 +610,7 @@ def handle_task_files_ready(channel: str, message: Message):
         if downloaded:
             try:
                 from tasks.models import Task
-                task = Task.objects.filter(task_id=task_id).first()
+                task = Task.objects.filter(id=task_id).first()
                 if task:
                     task.output_files = downloaded
                     task.output_directory = output_dir
