@@ -460,9 +460,9 @@ export default function Home() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {[
-              { value: '⚡', label: 'Performances optimisées', color: '#00B0F0' },
-              { value: '🚀', label: 'Calculs accélérés', color: '#00D4FF' },
-              { value: '📈', label: 'Évolutivité flexible', color: '#00B0F0' }
+              { value: ' ', label: 'Performances optimisées', color: '#00B0F0' },
+              { value: ' ', label: 'Calculs accélérés', color: '#00D4FF' },
+              { value: ' ', label: 'Évolutivité flexible', color: '#00B0F0' }
             ].map((stat, idx) => (
               <div key={idx} className="p-8 rounded-2xl text-center transition-all duration-300"
                 style={{

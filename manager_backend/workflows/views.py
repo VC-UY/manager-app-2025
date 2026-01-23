@@ -470,8 +470,131 @@ class LogoutView(APIView):
             if request.auth and hasattr(request.auth, 'delete'):
                 request.auth.delete()
                 print(f"[DEBUG] Token supprimé pour l'utilisateur: {request.user.email}")
-            
+
             return Response({"success": "Déconnexion réussie"}, status=status.HTTP_200_OK)
         except Exception as e:
             print(f"[ERROR] Erreur lors de la déconnexion: {str(e)}")
             return Response({"error": "Erreur lors de la déconnexion"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+def get_workflow_outputs(request, workflow_id):
+    """
+    Récupère la liste des fichiers de sortie d'un workflow.
+    """
+    import os
+
+    try:
+        workflow = get_object_or_404(Workflow, id=workflow_id)
+
+        if not workflow.output_path or not os.path.exists(workflow.output_path):
+            return JsonResponse({'files': [], 'message': 'Aucun fichier de sortie'}, status=200)
+
+        # Lister tous les fichiers dans le répertoire de sortie
+        files = []
+        for root, dirs, filenames in os.walk(workflow.output_path):
+            for filename in filenames:
+                file_path = os.path.join(root, filename)
+                relative_path = os.path.relpath(file_path, workflow.output_path)
+                files.append({
+                    'name': filename,
+                    'path': relative_path,
+                    'size': os.path.getsize(file_path),
+                    'modified': os.path.getmtime(file_path)
+                })
+
+        return JsonResponse({
+            'files': files,
+            'output_path': workflow.output_path,
+            'workflow_id': str(workflow.id),
+            'workflow_name': workflow.name,
+            'status': workflow.status
+        }, status=200)
+
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des fichiers de sortie: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@api_view(['GET'])
+def download_workflow_output(request, workflow_id, file_path):
+    """
+    Télécharge un fichier de sortie d'un workflow.
+    """
+    import os
+    from django.http import FileResponse, Http404
+
+    try:
+        workflow = get_object_or_404(Workflow, id=workflow_id)
+
+        if not workflow.output_path:
+            raise Http404("Chemin de sortie non défini")
+
+        # Construire le chemin complet du fichier
+        full_path = os.path.join(workflow.output_path, file_path)
+
+        # Vérifier que le fichier existe et est dans le répertoire de sortie (sécurité)
+        if not os.path.exists(full_path):
+            raise Http404("Fichier non trouvé")
+
+        # Vérifier que le chemin est bien dans le répertoire de sortie (éviter path traversal)
+        if not os.path.realpath(full_path).startswith(os.path.realpath(workflow.output_path)):
+            raise Http404("Accès non autorisé")
+
+        # Renvoyer le fichier
+        response = FileResponse(open(full_path, 'rb'), as_attachment=True, filename=os.path.basename(file_path))
+        return response
+
+    except Http404:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur lors du téléchargement du fichier: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@api_view(['GET'])
+def download_workflow_outputs_zip(request, workflow_id):
+    """
+    Télécharge tous les fichiers de sortie d'un workflow dans une archive ZIP.
+    """
+    import os
+    import zipfile
+    import tempfile
+    from django.http import FileResponse, Http404
+
+    try:
+        workflow = get_object_or_404(Workflow, id=workflow_id)
+
+        if not workflow.output_path or not os.path.exists(workflow.output_path):
+            raise Http404("Aucun fichier de sortie")
+
+        # Créer un fichier ZIP temporaire
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.zip')
+
+        with zipfile.ZipFile(temp_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for root, dirs, files in os.walk(workflow.output_path):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, workflow.output_path)
+                    zf.write(file_path, arcname)
+
+        temp_file.close()
+
+        # Renvoyer le fichier ZIP
+        zip_filename = f"{workflow.name.replace(' ', '_')}_outputs.zip"
+        response = FileResponse(
+            open(temp_file.name, 'rb'),
+            as_attachment=True,
+            filename=zip_filename
+        )
+
+        # Nettoyer le fichier temporaire après l'envoi
+        response.file_to_stream.close_callback = lambda: os.unlink(temp_file.name)
+
+        return response
+
+    except Http404:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur lors de la création de l'archive ZIP: {e}")
+        return JsonResponse({'error': str(e)}, status=500)

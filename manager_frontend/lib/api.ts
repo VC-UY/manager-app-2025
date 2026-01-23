@@ -409,6 +409,52 @@ export const workflowService = {
         throw { error: 'Une erreur est survenue lors de la récupération des tâches du workflow' };
       }
     }
+  },
+
+  // Récupérer les fichiers de sortie d'un workflow
+  getWorkflowOutputs: async (id: string) => {
+    try {
+      const response = await api.get(`/workflows/${id}/outputs/`);
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response) {
+        throw error.response.data;
+      } else {
+        throw { error: 'Une erreur est survenue lors de la récupération des fichiers de sortie' };
+      }
+    }
+  },
+
+  // Télécharger un fichier de sortie
+  downloadOutputFile: async (workflowId: string, filePath: string) => {
+    try {
+      const response = await api.get(`/workflows/${workflowId}/outputs/download/${filePath}`, {
+        responseType: 'blob'
+      });
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response) {
+        throw error.response.data;
+      } else {
+        throw { error: 'Une erreur est survenue lors du téléchargement du fichier' };
+      }
+    }
+  },
+
+  // Télécharger tous les fichiers de sortie en ZIP
+  downloadOutputsZip: async (workflowId: string) => {
+    try {
+      const response = await api.get(`/workflows/${workflowId}/outputs/download-zip/`, {
+        responseType: 'blob'
+      });
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response) {
+        throw error.response.data;
+      } else {
+        throw { error: 'Une erreur est survenue lors du téléchargement de l\'archive' };
+      }
+    }
   }
 };
 

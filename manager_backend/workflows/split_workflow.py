@@ -354,7 +354,7 @@ def generate_openmalaria_scenario(population_size, output_dir, shard_id):
       <EIRDaily>0.3815</EIRDaily>
       <EIRDaily>0.3815</EIRDaily>
       <EIRDaily>0.0629</EIRDaily>
-      <EIRDaily>0.0629</EIRDaily>generate_openmalaria_scenario
+      <EIRDaily>0.0629</EIRDaily>
       <EIRDaily>0.0629</EIRDaily>
       <EIRDaily>0.0629</EIRDaily>
       <EIRDaily>0.0629</EIRDaily>
@@ -1239,35 +1239,78 @@ def split_ml_training_workflow(workflow_instance: Workflow, logger:logging.Logge
 def split_openmalaria_workflow(workflow_instance: Workflow, num_tasks: int, population_per_task: int, logger: logging.Logger):
     """
     Découpe un workflow OpenMalaria en tâches avec des scénarios distincts.
-    
+
     Args:
         workflow_instance (Workflow): Instance du workflow à découper.
         num_tasks (int): Nombre de tâches à créer.
         population_per_task (int): Taille de la population par tâche.
         logger (logging.Logger): Logger pour les messages.
-    
+
     Returns:
         list: Liste des tâches créées.
     """
+    # Utiliser le chemin par défaut si executable_path n'est pas défini
+    if not workflow_instance.executable_path:
+        default_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "examples", "openmalria")
+        workflow_instance.executable_path = default_path
+        workflow_instance.save()
+        logger.info(f"executable_path défini automatiquement: {default_path}")
+
+    # Vérifier que les fichiers requis existent
+    xsd_file = os.path.join(workflow_instance.executable_path, "scenario_current.xsd")
+    densities_file = os.path.join(workflow_instance.executable_path, "densities.csv")
+
+    if not os.path.exists(xsd_file):
+        logger.error(f"Fichier XSD non trouvé: {xsd_file}")
+        raise FileNotFoundError(f"Fichier XSD requis non trouvé: {xsd_file}")
+
+    if not os.path.exists(densities_file):
+        logger.error(f"Fichier densities.csv non trouvé: {densities_file}")
+        raise FileNotFoundError(f"Fichier densities.csv requis non trouvé: {densities_file}")
+
+    logger.info(f"Fichiers requis trouvés: XSD={xsd_file}, densities={densities_file}")
+
     input_dir = os.path.join(workflow_instance.executable_path, "inputs")
+    os.makedirs(input_dir, exist_ok=True)
+    logger.info(f"Dossier inputs: {input_dir}")
     min_resources = get_min_volunteer_resources()
     
     # Utiliser l'image Docker officielle OpenMalaria de Swiss TPH
     # https://hub.docker.com/r/swisstph/openmalaria
     docker_img = {
         "name": "swisstph/openmalaria",
-        "tag": "46.0"
+        "tag": "47.0"
     }
     
     tasks = []
     for i in range(num_tasks):
         # Générer le fichier de scénario
+        shard_dir = os.path.join(input_dir, f"shard_{i}")
         scenario_path = generate_openmalaria_scenario(
             population_size=population_per_task,
-            output_dir=os.path.join(input_dir, f"shard_{i}"),
+            output_dir=shard_dir,
             shard_id=i
         )
-        
+
+        # Copier le fichier XSD (schéma XML) requis par OpenMalaria
+        import shutil
+        xsd_source = os.path.join(workflow_instance.executable_path, "scenario_current.xsd")
+        xsd_dest = os.path.join(shard_dir, "scenario_current.xsd")
+        if os.path.exists(xsd_source):
+            shutil.copy2(xsd_source, xsd_dest)
+            logger.info(f"Fichier XSD copié vers {xsd_dest}")
+        else:
+            logger.warning(f"Fichier XSD non trouvé: {xsd_source}")
+
+        # Copier le fichier densities.csv requis par OpenMalaria
+        densities_source = os.path.join(workflow_instance.executable_path, "densities.csv")
+        densities_dest = os.path.join(shard_dir, "densities.csv")
+        if os.path.exists(densities_source):
+            shutil.copy2(densities_source, densities_dest)
+            logger.info(f"Fichier densities.csv copié vers {densities_dest}")
+        else:
+            logger.warning(f"Fichier densities.csv non trouvé: {densities_source}")
+
         # Calculer la taille du fichier d'entrée
         input_size = os.path.getsize(scenario_path) // (1024 * 1024)  # Convertir en Mo
         
@@ -1276,10 +1319,10 @@ def split_openmalaria_workflow(workflow_instance: Workflow, num_tasks: int, popu
             workflow=workflow_instance,
             name=f"OpenMalaria Shard {i}",
             description=f"Simulation OpenMalaria sur population {population_per_task}",
-            command="openMalaria --scenario /input/scenario.xml",
+            command="sh -c 'cp /input/* /output/ && cd /output && openMalaria --scenario scenario.xml'",
             parameters=[],
-            input_files=[f"shard_{i}/scenario.xml"],
-            output_files=[f"shard_{i}/output/output.txt"],
+            input_files=[f"shard_{i}/scenario.xml", f"shard_{i}/scenario_current.xsd", f"shard_{i}/densities.csv"],
+            output_files=["output.txt", "ctsout.txt"],
             status=TaskStatus.CREATED,
             parent_task=None,
             is_subtask=False,
@@ -1297,7 +1340,28 @@ def split_openmalaria_workflow(workflow_instance: Workflow, num_tasks: int, popu
         task.save()
         tasks.append(task)
         logger.warning(f"Tâche {i}: {task} créée avec succès")
-    
+
+        # Publier l'événement de création de tâche vers Redis pour le Coordinator
+        try:
+            from redis_communication.client import RedisClient
+            from redis_communication.utils import get_manager_login_token
+            import uuid
+            redis_client = RedisClient.get_instance()
+            redis_client.publish('task/created', {
+                'task_id': str(task.id),
+                'workflow_id': str(workflow_instance.id),
+                'name': task.name,
+                'description': task.description,
+                'command': task.command,
+                'status': task.status,
+                'required_resources': task.required_resources,
+                'input_files': task.input_files,
+                'output_files': task.output_files,
+            }, str(uuid.uuid4()), get_manager_login_token(), 'request')
+            logger.info(f"Événement task/created publié pour la tâche {task.id}")
+        except Exception as e:
+            logger.error(f"Erreur lors de la publication de task/created: {e}")
+
     workflow_instance.tasks.add(*tasks)
     workflow_instance.save()
     return tasks

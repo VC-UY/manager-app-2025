@@ -120,6 +120,19 @@ def submit_openmalaria_workflow_view(request, workflow_id):
                 'response': response
             }, status=400)
         
+        # Définir output_path si non défini
+        if not workflow.output_path:
+            if workflow.executable_path:
+                workflow.output_path = os.path.join(workflow.executable_path, 'outputs')
+            else:
+                # Créer un chemin par défaut basé sur l'ID du workflow
+                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                workflow.output_path = os.path.join(base_dir, 'workflow_outputs', str(workflow_id))
+
+        # Créer le dossier de sortie s'il n'existe pas
+        os.makedirs(workflow.output_path, exist_ok=True)
+        logger.info(f"Dossier de sortie créé: {workflow.output_path}")
+
         # Mettre à jour le statut
         workflow.status = WorkflowStatus.SPLITTING
         workflow.submitted_at = timezone.now()
