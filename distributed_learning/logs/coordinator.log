@@ -1,0 +1,9 @@
+2026-04-25 21:42:13  [COORDINATEUR]  INFO      Coordinateur démarré — écoute 0.0.0.0:9000
+2026-04-25 21:42:13  [COORDINATEUR]  INFO      Manager cible : 127.0.0.1:9001
+2026-04-25 21:42:22  [COORDINATEUR]  INFO      Volontaire connecté : 127.0.0.1  (total : 1)
+2026-04-25 21:42:22  [COORDINATEUR]  INFO      Volontaire connecté : 127.0.0.1  (total : 2)
+2026-04-25 21:42:22  [COORDINATEUR]  INFO      Volontaire connecté : 127.0.0.1  (total : 3)
+2026-04-25 22:06:55  [COORDINATEUR]  INFO      Volontaire connecté : 192.168.1.106  (total : 4)
+2026-04-25 23:13:38  [COORDINATEUR]  INFO      Volontaire 192.168.1.106 déconnecté : Connexion fermée par le pair
+2026-04-25 23:13:38  [COORDINATEUR]  INFO      Volontaire retiré : 192.168.1.106  (total : 3)
+2026-04-25 23:13:40  [COORDINATEUR]  INFO      Arrêt du coordinateur…

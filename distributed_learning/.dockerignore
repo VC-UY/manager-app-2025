@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+*.egg-info/
+
+# Results / logs
+results/
+logs/
+*.json
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# Docs
+*.docx
+*.pdf
+ReadMe/
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+.env
+.env.example
+
+# OS
+.DS_Store
+Thumbs.db

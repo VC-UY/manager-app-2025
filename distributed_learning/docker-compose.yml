@@ -1,0 +1,68 @@
+# =============================================================================
+# docker-compose.yml — Distributed Learning Volunteer Node
+#
+# Usage:
+#   1. Copy .env.example to .env and edit the values
+#   2. docker compose pull        # try to pull prebuilt image from Docker Hub
+#   3. docker compose up -d       # start the volunteer (builds locally if pull failed)
+#   4. docker compose logs -f     # follow logs
+#   5. docker compose down        # stop the volunteer
+#
+# To run multiple volunteers on the same machine:
+#   VOLUNTEER_ID=1 docker compose -p volunteer1 up -d
+#   VOLUNTEER_ID=2 docker compose -p volunteer2 up -d
+# =============================================================================
+
+services:
+  volunteer:
+    # ── Image on Docker Hub (public, free) ──────────────────────────────
+    # Replace <your-dockerhub-username> with your actual Docker Hub username.
+    image: pablo93230/distributed-learning-volunteer:latest
+
+    # ── Build from local Dockerfile (fallback if image not available) ───
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    # ── Environment ─────────────────────────────────────────────────────
+    environment:
+      # REQUIRED
+      - VOLUNTEER_ID=${VOLUNTEER_ID:-0}
+      - COORDINATOR_HOST=${COORDINATOR_HOST}
+      - MANAGER_HOST=${MANAGER_HOST}
+
+      # OPTIONAL — all have defaults (see src/config.py)
+      - N_VOLUNTEERS=${N_VOLUNTEERS:-5}
+      - MY_IP=${MY_IP:-}
+      - DATASET=${DATASET:-mnist}
+      - DATA_PARTITION=${DATA_PARTITION:-non-iid}
+      - COMPRESSION=${COMPRESSION:-quantization}
+      - K_NEIGHBORS=${K_NEIGHBORS:-3}
+      - GOSSIP_INTERVAL=${GOSSIP_INTERVAL:-60}
+      - GOSSIP_FANOUT=${GOSSIP_FANOUT:-1}
+      - LOCAL_EPOCHS=${LOCAL_EPOCHS:-3}
+      - BATCH_SIZE=${BATCH_SIZE:-32}
+      - LEARNING_RATE=${LEARNING_RATE:-0.01}
+      - NUM_CLASSES=${NUM_CLASSES:-10}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - STATS_DIR=${STATS_DIR:-/app/results}
+      - HEARTBEAT_INTERVAL=${HEARTBEAT_INTERVAL:-10}
+      - HEARTBEAT_TIMEOUT=${HEARTBEAT_TIMEOUT:-35}
+      - SOCKET_TIMEOUT=${SOCKET_TIMEOUT:-60}
+
+      # OPTIONAL — hardware hints (advertised to coordinator)
+      - CPU_CORES=${CPU_CORES:-}
+      - RAM_GB=${RAM_GB:-}
+      - NETWORK_MBPS=${NETWORK_MBPS:-}
+
+    # ── Volumes ─────────────────────────────────────────────────────────
+    # Persist results outside the container
+    volumes:
+      - ./results:/app/results
+
+    # ── Network ─────────────────────────────────────────────────────────
+    # Use host network so the volunteer can reach coordinator/manager
+    # and they can reach it by its real IP.
+    network_mode: host
+
+    restart: unless-stopped

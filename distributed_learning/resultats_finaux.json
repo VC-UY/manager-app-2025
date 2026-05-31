@@ -1,0 +1,49 @@
+{
+  "runtime_s": 5399.587186098099,
+  "n_active_volunteers": 4,
+  "total_model_exchanges": 77,
+  "total_bytes_routed": 12070250,
+  "throughput_KB_per_s": 2.183010128250728,
+  "volunteer_summaries": {
+    "10.0.0.2": {
+      "current_round": 16,
+      "total_rounds": 16,
+      "best_test_acc": 0.9822,
+      "final_test_acc": 0.9822,
+      "total_bytes_sent": 2544615,
+      "total_bytes_received": 2824148,
+      "total_train_duration_s": 4856.014610290527,
+      "avg_compression_ratio": 5.204852098585574
+    },
+    "10.0.0.3": {
+      "current_round": 16,
+      "total_rounds": 16,
+      "best_test_acc": 0.9879,
+      "final_test_acc": 0.9879,
+      "total_bytes_sent": 2525344,
+      "total_bytes_received": 3911518,
+      "total_train_duration_s": 5035.4595267772675,
+      "avg_compression_ratio": 5.2461986172756445
+    },
+    "10.0.0.1": {
+      "current_round": 15,
+      "total_rounds": 15,
+      "best_test_acc": 0.9881,
+      "final_test_acc": 0.9876,
+      "total_bytes_sent": 2326641,
+      "total_bytes_received": 3458728,
+      "total_train_duration_s": 4811.7619795799255,
+      "avg_compression_ratio": 5.337145508072832
+    },
+    "192.168.1.106": {
+      "current_round": 15,
+      "total_rounds": 15,
+      "best_test_acc": 0.9888,
+      "final_test_acc": 0.9888,
+      "total_bytes_sent": 4673650,
+      "total_bytes_received": 1564785,
+      "total_train_duration_s": 3565.0267946720123,
+      "avg_compression_ratio": 2.656642935073253
+    }
+  }
+}
