@@ -4,14 +4,14 @@ Configuration centrale - toutes les valeurs sont surchargeables par variables d'
 import os
 
 # ─── Réseau Coordinateur ───────────────────────────────────────────────────────
-COORDINATOR_HOST = os.getenv("COORDINATOR_HOST", "0.0.0.0")
+COORDINATOR_HOST = os.getenv("COORDINATOR_HOST", "192.168.1.106")
 COORDINATOR_PORT = int(os.getenv("COORDINATOR_PORT", "9000"))
-COORDINATOR_EXTERNAL_HOST = os.getenv("COORDINATOR_EXTERNAL_HOST", "127.0.0.1")
+COORDINATOR_EXTERNAL_HOST = os.getenv("COORDINATOR_EXTERNAL_HOST", "192.168.1.106")
 
 # ─── Réseau Manager ───────────────────────────────────────────────────────────
-MANAGER_HOST = os.getenv("MANAGER_HOST", "0.0.0.0")
+MANAGER_HOST = os.getenv("MANAGER_HOST", "192.168.1.106")
 MANAGER_PORT = int(os.getenv("MANAGER_PORT", "9001"))
-MANAGER_EXTERNAL_HOST = os.getenv("MANAGER_EXTERNAL_HOST", "127.0.0.1")
+MANAGER_EXTERNAL_HOST = os.getenv("MANAGER_EXTERNAL_HOST", "192.168.1.106")
 
 # ─── Topologie ────────────────────────────────────────────────────────────────
 K_NEIGHBORS = int(os.getenv("K_NEIGHBORS", "4"))
@@ -26,6 +26,7 @@ GOSSIP_FANOUT   = int(os.getenv("GOSSIP_FANOUT", "2"))       # voisins contacté
 
 # ─── Entraînement local ───────────────────────────────────────────────────────
 LOCAL_EPOCHS  = int(os.getenv("LOCAL_EPOCHS", "3"))
+MAX_ROUNDS    = int(os.getenv("MAX_ROUNDS", "30"))  # 0 = no limit
 BATCH_SIZE    = int(os.getenv("BATCH_SIZE", "32"))
 LEARNING_RATE = float(os.getenv("LEARNING_RATE", "0.01"))
 DATASET       = os.getenv("DATASET", "mnist")        # 'mnist' | 'cifar10'

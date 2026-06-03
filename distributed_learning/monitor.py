@@ -4,8 +4,8 @@ Outil de monitoring en temps réel du système d'apprentissage distribué.
 Se connecte au manager et affiche les statistiques périodiquement.
 
 Usage :
-    python monitor.py                            # manager local (127.0.0.1:9001)
-    python monitor.py --manager 192.168.1.11    # manager distant
+    python monitor.py                            # manager local (127.168.1.106:9001)
+    python monitor.py --manager 192.168.1.106   # manager distant
     python monitor.py --interval 5              # rafraîchissement toutes les 5s
     python monitor.py --no-clear                # sans effacer l'écran (pour log)
     python monitor.py --export stats_export.json  # exporter et quitter

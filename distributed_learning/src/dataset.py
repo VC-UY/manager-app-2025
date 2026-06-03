@@ -6,6 +6,7 @@ Partitions :
   - 'non-iid' : chaque volontaire reçoit principalement 2 classes (hétérogénéité réelle)
 """
 import os
+import math
 import logging
 from typing import Tuple
 
@@ -50,16 +51,26 @@ def load_dataset(dataset: str,
     else:
         raise ValueError(f"Dataset inconnu : {dataset}")
 
+    # Targets utilisés pour analyser la partition et construire des classes.
+    if hasattr(train_ds, "targets"):
+        targets = np.array(train_ds.targets)
+    else:
+        targets = np.array([t for _, t in train_ds])
+
     # Partition des données d'entraînement
     if partition == "iid":
         indices = _iid_partition(train_ds, volunteer_id, n_volunteers)
-    else:
+    elif partition == "non-iid":
         indices = _non_iid_partition(train_ds, volunteer_id, n_volunteers)
+    else:
+        raise ValueError(f"Partition inconnue : {partition}")
 
     train_subset = Subset(train_ds, indices)
+    labels = np.unique(targets[indices]).tolist()
     logging.info(
         f"[Dataset] Volontaire {volunteer_id}/{n_volunteers} "
-        f"— partition {partition} : {len(train_subset)} exemples"
+        f"— partition {partition} : {len(train_subset)} exemples "
+        f"— classes {labels}"
     )
 
     train_loader = DataLoader(train_subset, batch_size=batch_size,
@@ -79,14 +90,14 @@ def _iid_partition(dataset, vol_id: int, n: int):
 
 
 def _non_iid_partition(dataset, vol_id: int, n: int):
-    """2 classes dominantes par volontaire (distribution non uniforme)."""
+    """Bloc de classes par volontaire (distribution non uniforme)."""
     if hasattr(dataset, "targets"):
         targets = np.array(dataset.targets)
     else:
         targets = np.array([t for _, t in dataset])
 
     n_classes = len(np.unique(targets))
-    classes_per_vol = max(2, n_classes // n)
+    classes_per_vol = max(2, math.ceil(n_classes / n))
     assigned = [(vol_id * classes_per_vol + i) % n_classes for i in range(classes_per_vol)]
 
     indices = []

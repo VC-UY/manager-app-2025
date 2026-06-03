@@ -80,6 +80,8 @@ def main():
                         help="Secondes entre rounds gossip (défaut: 30)")
     parser.add_argument("--local-epochs",     type=int,   default=3,
                         help="Epochs d'entraînement local par round (défaut: 3)")
+    parser.add_argument("--max-rounds",       type=int,   default=30,
+                        help="Nombre maximum de rounds (défaut: 30, 0 = sans limite)")
     parser.add_argument("--sparsity",         type=float, default=0.05,
                         help="Ratio top-k pour sparsification (défaut: 0.05)")
     parser.add_argument("--bits",             type=int,   default=8,
@@ -97,12 +99,12 @@ def main():
 
     # Variables d'environnement partagées
     base_env = {
-        "MANAGER_HOST":          "0.0.0.0",
+        "MANAGER_HOST":          "192.168.1.106",
         "MANAGER_PORT":          "9001",
-        "MANAGER_EXTERNAL_HOST": "127.0.0.1",
-        "COORDINATOR_HOST":      "0.0.0.0",
+        "MANAGER_EXTERNAL_HOST": "192.168.1.106",
+        "COORDINATOR_HOST":      "192.168.1.106",
         "COORDINATOR_PORT":      "9000",
-        "COORDINATOR_EXTERNAL_HOST": "127.0.0.1",
+        "COORDINATOR_EXTERNAL_HOST": "192.168.1.106",
         "K_NEIGHBORS":           str(args.k),
         "GOSSIP_INTERVAL":       str(args.gossip_interval),
         "GOSSIP_FANOUT":         "1",
@@ -112,6 +114,7 @@ def main():
         "COMPRESSION":           args.compression,
         "QUANTIZATION_BITS":     str(args.bits),
         "SPARSIFICATION_RATIO":  str(args.sparsity),
+        "MAX_ROUNDS":            str(args.max_rounds),
         "HEARTBEAT_INTERVAL":    "10",
         "HEARTBEAT_TIMEOUT":     "35",
         "SOCKET_TIMEOUT":        "30",
@@ -132,6 +135,7 @@ def main():
     print(f"  Voisins XOR (k) : {args.k}")
     print(f"  Gossip interval : {args.gossip_interval}s")
     print(f"  Epochs locaux   : {args.local_epochs}")
+    print(f"  Max rounds      : {args.max_rounds} (0 = sans limite)")
     print(sep)
 
     # 1. Manager (toujours en premier — le coordinateur lui enverra des messages)

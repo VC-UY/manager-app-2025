@@ -38,7 +38,7 @@ sys.path.insert(0, __file__.rsplit("\\", 1)[0] if "\\" in __file__ else ".")
 from src.config import (
     COORDINATOR_PORT, MANAGER_PORT,
     K_NEIGHBORS, GOSSIP_INTERVAL, GOSSIP_FANOUT,
-    LOCAL_EPOCHS, BATCH_SIZE, LEARNING_RATE,
+    LOCAL_EPOCHS, MAX_ROUNDS, BATCH_SIZE, LEARNING_RATE,
     DATASET, NUM_CLASSES, DATA_PARTITION,
     COMPRESSION, QUANTIZATION_BITS, SPARSIFICATION_RATIO,
     HEARTBEAT_INTERVAL, SOCKET_TIMEOUT,
@@ -103,6 +103,7 @@ class Volunteer:
 
         self._running      = True
         self._current_round = 0
+        self.max_rounds     = MAX_ROUNDS
         self._neighbors: List[dict] = []
         self._nb_lock = threading.Lock()
 
@@ -188,6 +189,11 @@ class Volunteer:
         """Boucle principale : entraînement local gossip push/pull agrégation."""
         while self._running:
             self._current_round += 1
+            if self.max_rounds > 0 and self._current_round > self.max_rounds:
+                logging.info(
+                    f"Nombre maximum de rounds atteint ({self.max_rounds}), arrêt du volontaire."
+                )
+                break
             t_round = time.time()
             bytes_sent = 0
             bytes_recv = 0

@@ -144,7 +144,7 @@ python monitor.py
 
 ```bash
 # Variables d'environnement (optionnelles, les valeurs par défaut sont dans src/config.py)
-export MANAGER_HOST=0.0.0.0
+export MANAGER_HOST=192.168.1.106
 export MANAGER_PORT=9001
 export K_NEIGHBORS=4
 export STATS_PRINT_INTERVAL=30
@@ -160,9 +160,9 @@ python3 manager.py
 ### Étape 2 — Démarrer le Coordinateur (machine A)
 
 ```bash
-export COORDINATOR_HOST=0.0.0.0
+export COORDINATOR_HOST=192.168.1.106
 export COORDINATOR_PORT=9000
-export MANAGER_EXTERNAL_HOST=<IP_PUBLIQUE_MACHINE_B>
+export MANAGER_EXTERNAL_HOST=192.168.1.106
 export MANAGER_PORT=9001
 export HEARTBEAT_TIMEOUT=35
 
@@ -354,10 +354,10 @@ python3 monitor.py --manager 192.168.1.11
 python3 monitor.py --manager 192.168.1.11 --interval 5
 
 # Exporter les stats en JSON et quitter
-python3 monitor.py --manager 192.168.1.106 --export resultats_finaux.json
+python3 monitor.py --manager 192.168.1.106 --export resultats_finaux_02-06-2026.json
 
 # Mode log (sans effacement écran — utile pour redirection fichier)
-python3 monitor.py --manager 192.168.1.11 --no-clear >> monitor.log
+python3 monitor.py --manager 192.168.1.106 --no-clear >> monitor.log
 ```
 
 ### Consulter les logs

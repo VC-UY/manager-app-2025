@@ -57,7 +57,7 @@ logging.basicConfig(
 
 class Manager:
     def __init__(self):
-        self._volunteers: Dict[str, VolunteerNode] = {}  # mac → VolunteerNode
+        self._volunteers: Dict[str, VolunteerNode] = {}  # VolunteerNode
         self._vol_lock  = threading.Lock()
         
         # Mapping IP courant → MAC (pour supporter les changements d'IP)
