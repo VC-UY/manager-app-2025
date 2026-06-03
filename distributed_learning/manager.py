@@ -25,7 +25,7 @@ import sys
 import threading
 import time
 from collections import defaultdict, deque
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0] if "/" in __file__ else ".")
 sys.path.insert(0, __file__.rsplit("\\", 1)[0] if "\\" in __file__ else ".")
@@ -172,7 +172,7 @@ class Manager:
                 return (delta_bytes * 8) / elapsed / 1_000_000
         return node.resources.network_bandwidth_mbps if node is not None else 0.0
 
-    def _score_neighbors(self, neighbor_macs: List[str]) -> List[str]:
+    def _score_neighbors(self, neighbor_macs: List[str]) -> List[Tuple[str, float]]:
         """Classe les voisins les plus proches en priorité SW-UCB sur la bande passante."""
         self._neighbor_request_count += 1
         t = max(1, self._neighbor_request_count)
@@ -192,7 +192,7 @@ class Manager:
             scored.append((mac, score))
 
         scored.sort(key=lambda item: item[1], reverse=True)
-        return [mac for mac, _ in scored]
+        return scored
 
     # ─── Handlers ─────────────────────────────────────────────────────────────
 
@@ -268,10 +268,12 @@ class Manager:
             if not sender_mac:
                 sender_mac = sender_ip  # Utiliser l'IP comme fallback
 
+        # Conserver une copie des métadonnées et ajouter le timestamp de queue
+        metadata = dict(metadata or {})
+        metadata["_queued_ts"] = time.time()
         with self._q_lock:
             self._queues[dest_mac].put((sender_mac, payload, metadata))
 
-        self._stats.record_exchange(sender_ip, dest_ip, len(payload))
         send_message(conn, MSG_ACK,
                      {"status": "queued", "dest": dest_mac, "bytes": len(payload)})
         logging.info(
@@ -326,6 +328,13 @@ class Manager:
             f"Modèle livré : {sender} → {vol_mac}  "
             f"({len(payload)/1024:.1f} KB)  restants={remaining}"
         )
+        # Enregistrer la livraison avec métadonnées et timestamp côté manager
+        try:
+            recv_ts = time.time()
+            payload_bytes = len(payload) if payload else 0
+            self._stats.record_exchange(sender, vol_mac, payload_bytes, metadata=meta, delivered_ts=recv_ts)
+        except Exception as e:
+            logging.debug(f"Enregistrement échange échoué: {e}")
 
     def _on_neighbors_request(self, conn: socket.socket,
                               vol_ip: str, data: dict):
@@ -355,11 +364,17 @@ class Manager:
                 return
 
             neighbors = get_k_nearest_neighbors(req_mac, all_macs, k)
-            ordered = self._score_neighbors(neighbors)
-            neighbors_info = [self._volunteers[mac].to_dict() for mac in ordered]
+            scored = self._score_neighbors(neighbors)  # list[(mac, score)]
+            # Construire l'info renvoyée en incluant le score SW-UCB et le rang
+            neighbors_info = []
+            for idx, (mac, score) in enumerate(scored, start=1):
+                node_dict = self._volunteers[mac].to_dict()
+                node_dict["sw_ucb_score"] = score
+                node_dict["sw_ucb_rank"] = idx
+                neighbors_info.append(node_dict)
 
         send_message(conn, MSG_NEIGHBORS_RESPONSE, {"neighbors": neighbors_info})
-        logging.debug(f"Voisins de {req_mac} : {ordered}")
+        logging.debug(f"Voisins de {req_mac} : {[m for m, _ in scored]}")
 
     def _on_stats_push(self, data: dict):
         """Enregistre le résumé de stats poussé par un volontaire."""

@@ -1,12 +1,25 @@
 import json
 import matplotlib.pyplot as plt
 from pathlib import Path
+import glob
 
 path = Path('distributed_learning/results')
 path.mkdir(parents=True, exist_ok=True)
 with open(path / 'global_stats.json') as f:
     data = json.load(f)
-vols = data['volunteer_summaries']
+
+# Load per-volunteer full files if present
+vol_files = sorted(glob.glob(str(path / 'volunteer_*.json')))
+vol_details = {}
+for vf in vol_files:
+    try:
+        with open(vf) as f:
+            j = json.load(f)
+            vol_details[j.get('volunteer_ip', vf)] = j
+    except Exception:
+        pass
+
+vols = data.get('volunteer_summaries', {})
 ids = list(vols.keys())
 accuracies = [vols[v]['final_test_acc'] for v in ids]
 best_acc = [vols[v]['best_test_acc'] for v in ids]
@@ -22,7 +35,7 @@ x = list(range(len(ids)))
 plt.bar([i - bar_width/2 for i in x], best_acc, width=bar_width, label='Best test accuracy')
 plt.bar([i + bar_width/2 for i in x], accuracies, width=bar_width, label='Final test accuracy')
 plt.xticks(x, ids, rotation=30)
-plt.ylim(0, 0.6)
+plt.ylim(0, 1.0)
 plt.ylabel('Accuracy')
 plt.title('Volunteer test accuracies')
 plt.legend()
@@ -58,43 +71,55 @@ plt.tight_layout()
 plt.savefig(path / 'global_stats_duration_compression.png')
 plt.close()
 
-report = """# Rapport des résultats globaux
+report = []
+report.append('# Rapport des résultats globaux')
+report.append('\n## Résumé global\n')
+report.append(f"- Durée totale d’exécution : {data['runtime_s']:.1f} s")
+report.append(f"- Nombre de volontaires actifs : {data['n_active_volunteers']}")
+report.append(f"- Échanges de modèles : {data['total_model_exchanges']}")
+report.append(f"- Total des octets routés : {data['total_bytes_routed']:,}")
+report.append(f"- Débit global : {data['throughput_KB_per_s']:.3f} KB/s\n")
 
-## Résumé global
-"""
-report += f"- Durée totale d’exécution : {data['runtime_s']:.1f} s\n"
-report += f"- Nombre de volontaires actifs : {data['n_active_volunteers']}\n"
-report += f"- Échanges de modèles : {data['total_model_exchanges']}\n"
-report += f"- Total des octets routés : {data['total_bytes_routed']:,}\n"
-report += f"- Débit global : {data['throughput_KB_per_s']:.3f} KB/s\n\n"
-report += "## Tableau des volontaires\n\n"
-report += "| Volontaire | Rounds | Meilleure acc. test | Acc. test finale | Bytes envoyés | Bytes reçus | Durée train (h) | Comp. ratio |\n"
-report += "|---|---|---|---|---|---|---|---|\n"
+report.append('## Tableau des volontaires\n')
+report.append('| Volontaire | Rounds | Meilleure acc. test | Acc. test finale | Bytes envoyés | Bytes reçus | Durée train (h) | Comp. ratio |')
+report.append('|---|---|---|---|---|---|---|---|')
 for v in ids:
     vol = vols[v]
-    report += f"| {v} | {vol['total_rounds']} | {vol['best_test_acc']:.4f} | {vol['final_test_acc']:.4f} | {vol['total_bytes_sent']:,} | {vol['total_bytes_received']:,} | {vol['total_train_duration_s']/3600:.2f} | {vol['avg_compression_ratio']:.2f} |\n"
-report += "\n## Graphiques générés\n\n"
-report += "- `global_stats_accuracy.png` : comparatif des meilleures et finales précisions de test.\n"
-report += "- `global_stats_traffic.png` : comparaison des volumes de données envoyées et reçues.\n"
-report += "- `global_stats_duration_compression.png` : durée d’entraînement et ratio de compression par volontaire.\n\n"
-report += "## Interprétation scientifique\n\n"
-report += "Les performances observées sont faibles (20-39% de précision finale). Cela signifie que le modèle ne généralise pas bien sur les données de test, probablement à cause d’une combinaison de :\n"
-report += "- partition de données non-iid ou déséquilibrée entre volontaires ;\n"
-report += "- peu de rounds pour certains volontaires ;\n"
-report += "- compression trop élevée / mauvaise communication des gradients.\n\n"
-report += "### Points clés\n"
-report += "- `192.168.1.106` a réalisé 395 rounds, mais sa précision finale reste basse (21,14%). Ce comportement est typique d’un entraînement instable ou de données locales très bruyantes.\n"
-report += "- `192.168.1.109` (36 rounds) a aussi une faible précision finale (18,74%). Le nombre de rounds est faible, donc son impact est limité.\n"
-report += "- `192.168.1.131/24` a la meilleure précision finale (39,46%) et un meilleur équilibre entre meilleur et dernier score, mais il n’a rien envoyé (`total_bytes_sent`=0), ce qui suggère un rôle de réception ou un problème de configuration de l’échange.\n\n"
-report += "### Interprétation des mesures par volontaire\n"
-report += "- `current_round` / `total_rounds` : représente le nombre d’itérations locales réalisées. Un faible nombre de rounds empêche la convergence.\n"
-report += "- `best_test_acc` : le meilleur score observé durant l’entraînement. Si cette valeur est bien supérieure à `final_test_acc`, le modèle a pu sur-apprendre puis se dégrader.\n"
-report += "- `final_test_acc` : précision finale du modèle local au moment de l’arrêt. C’est l’indicateur de performance le plus important.\n"
-report += "- `total_bytes_sent` / `total_bytes_received` : volume de mise à jour échangée. Un énorme déséquilibre indique une architecture d’échange inégale ou un volontaire qui reçoit beaucoup sans envoyer.\n"
-report += "- `total_train_duration_s` : temps total d’entraînement. Un temps très élevé pour peu de progrès signifie un entraînement inefficace.\n"
-report += "- `avg_compression_ratio` : compression moyenne appliquée aux mises à jour. Une compression élevée réduit le trafic mais peut dégrader les performances du modèle.\n"
+    report.append(f"| {v} | {vol.get('total_rounds',0)} | {vol.get('best_test_acc',0):.4f} | {vol.get('final_test_acc',0):.4f} | {vol.get('total_bytes_sent',0):,} | {vol.get('total_bytes_received',0):,} | {vol.get('total_train_duration_s',0)/3600:.2f} | {vol.get('avg_compression_ratio',0):.2f} |")
 
+# Per-volunteer round traces (if volunteer files exist)
+report.append('\n## Détails par volontaire et par round\n')
+for ip, vf in vol_details.items():
+    report.append(f"### Volontaire {ip}")
+    report.append(f"- Total rounds: {vf.get('total_rounds',0)}")
+    report.append(f"- Total bytes sent: {vf.get('total_bytes_sent',0):,}")
+    report.append(f"- Total bytes received: {vf.get('total_bytes_received',0):,}\n")
+    report.append('| Round | Duration (s) | Test acc | Best acc so far | Best acc ts | #sent | #recv |')
+    report.append('|---|---:|---:|---:|---:|---:|---:|')
+    for r in vf.get('rounds', []):
+        rd = r.get('round_num')
+        dur = r.get('round_duration_s') or (r.get('round_end_ts',0)-r.get('round_start_ts',0))
+        tacc = r.get('test_acc',0)
+        best = r.get('best_test_acc_so_far',0)
+        best_ts = r.get('best_test_acc_ts',0)
+        n_sent = len(r.get('sent_details',[]))
+        n_recv = len(r.get('recv_details',[]))
+        report.append(f"| {rd} | {dur:.1f} | {tacc:.4f} | {best:.4f} | {best_ts:.1f} | {n_sent} | {n_recv} |")
+    report.append('\n')
+
+# Exchanges detailed from manager
+report.append('## Historique des échanges (manager)\n')
+for ex in data.get('exchanges', []):
+    s = ex.get('sender')
+    r = ex.get('receiver')
+    b = ex.get('bytes',0)
+    q = ex.get('queued_ts')
+    d = ex.get('delivered_ts')
+    tt = ex.get('transfer_time_s')
+    report.append(f"- {s} → {r} : {b/1024:.1f} KB queued={q} delivered={d} transfer_time_s={tt}")
+
+# Write report
 with open(path / 'global_stats_report.md', 'w') as f:
-    f.write(report)
+    f.write('\n'.join(report))
 
 print('Generated report and charts in', path)

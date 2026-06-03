@@ -211,18 +211,29 @@ class Volunteer:
             loss, tr_acc, duration = self._train()
 
             # 3. Push : envoi modèle aux voisins les plus prometteurs
+            sent_details = []
             if neighbors:
                 targets = neighbors[:min(GOSSIP_FANOUT, len(neighbors))]
                 target_macs = [t.get("mac_address") for t in targets]
                 logging.info(f"Envoi adaptatif vers : {target_macs}")
                 for target in targets:
-                    dest = target.get("mac_address") or target.get("current_ip")
-                    ok, sent = self._push_model(dest)
+                    dest_mac = target.get("mac_address")
+                    dest_ip = target.get("current_ip")
+                    dest = dest_mac or dest_ip
+                    ok, sent, send_duration, send_ts_start, send_ts_end = self._push_model(dest)
                     if ok:
                         bytes_sent += sent
+                        sent_details.append({
+                            "dest_mac": dest_mac,
+                            "dest_ip": dest_ip,
+                            "bytes": sent,
+                            "send_duration_s": send_duration,
+                            "send_ts_start": send_ts_start,
+                            "send_ts_end": send_ts_end,
+                        })
 
             # 4. Pull : récupération des modèles envoyés par les pairs
-            received_states, recv = self._pull_models()
+            received_states, recv, recv_details = self._pull_models()
             bytes_recv = recv
 
             # 5. Agrégation FedAvg
@@ -237,6 +248,20 @@ class Volunteer:
             ratio = compression_ratio(self._model_bytes, bytes_sent) if bytes_sent > 0 else 1.0
 
             # 8. Enregistrement stats local
+            # Round timing and best-accuracy tracking
+            round_end_ts = time.time()
+            round_duration = round_end_ts - t_round
+
+            # Best test acc so far (including this round)
+            with self._stats._lock:
+                prev_rounds = list(self._stats.rounds)
+            best_acc = test_acc
+            best_ts = round_end_ts
+            for r in prev_rounds:
+                if getattr(r, "test_acc", 0) > best_acc:
+                    best_acc = r.test_acc
+                    best_ts = getattr(r, "timestamp", best_ts)
+
             self._stats.record(
                 round_num         = self._current_round,
                 train_loss        = loss,
@@ -247,6 +272,14 @@ class Volunteer:
                 bytes_received    = bytes_recv,
                 n_models_received = len(received_states),
                 compression_ratio = ratio,
+                neighbors_info    = neighbors,
+                sent_details      = sent_details,
+                recv_details      = recv_details,
+                round_start_ts    = t_round,
+                round_end_ts      = round_end_ts,
+                round_duration_s  = round_duration,
+                best_test_acc_so_far = best_acc,
+                best_test_acc_ts  = best_ts,
             )
 
             # 9. Envoi des stats au manager pour monitoring centralisé
@@ -336,12 +369,24 @@ class Volunteer:
                 self.model, COMPRESSION,
                 bits=QUANTIZATION_BITS, ratio=SPARSIFICATION_RATIO
             )
+            # Ajouter des métadonnées d'envoi (remplies ici après envoi)
+
             conn = self._connect_manager()
+            # Timestamp de début d'envoi à partager avec le destinataire via le manager
+            send_ts_start = time.time()
+            # Enrichir meta avant envoi (manager stockera ces métadonnées)
+            meta.update({
+                "payload_bytes": len(compressed),
+                "send_ts_start": send_ts_start,
+            })
             send_message(conn, MSG_SEND_MODEL,
                          {"sender_ip": self.my_ip, "dest_ip": dest_ip, "metadata": meta},
                          compressed)
             msg_type, rsp, _ = receive_message(conn)
+            send_ts_end = time.time()
             conn.close()
+
+            send_duration = send_ts_end - send_ts_start
 
             if msg_type == MSG_ACK:
                 ratio = compression_ratio(self._model_bytes, len(compressed))
@@ -349,16 +394,17 @@ class Volunteer:
                     f"Modèle envoyé → {dest_ip}  "
                     f"({len(compressed)/1024:.1f} KB, ratio={ratio:.1f}x)"
                 )
-                return True, len(compressed)
+                return True, len(compressed), send_duration, send_ts_start, send_ts_end
             logging.warning(f"Push refusé par manager : {rsp}")
         except Exception as exc:
             logging.warning(f"Push vers {dest_ip} échoué : {exc}")
-        return False, 0
+        return False, 0, 0.0, 0.0, 0.0
 
     def _pull_models(self):
         """Récupère les modèles en attente pour ce volontaire."""
         received_states = []
         total_recv = 0
+        recv_details = []
 
         # Plusieurs polls jusqu'à ce que la file soit vide
         for _ in range(10):
@@ -375,6 +421,16 @@ class Volunteer:
                     decompress_model(rcv_m, payload, meta)
                     received_states.append(rcv_m.state_dict())
                     total_recv += len(payload)
+                    # Tracer la réception
+                    recv_ts = time.time()
+                    recv_details.append({
+                        "sender": data.get("sender_ip"),
+                        "bytes": len(payload),
+                        "send_ts_start": meta.get("send_ts_start"),
+                        "payload_bytes": meta.get("payload_bytes"),
+                        "recv_ts": recv_ts,
+                        "send_duration_s": meta.get("send_duration_s"),
+                    })
                     logging.info(
                         f"Modèle reçu de {data.get('sender_ip')}  "
                         f"({len(payload)/1024:.1f} KB)"
@@ -388,7 +444,7 @@ class Volunteer:
                 logging.warning(f"Pull échoué : {exc}")
                 break
 
-        return received_states, total_recv
+        return received_states, total_recv, recv_details
 
     def _push_stats_to_manager(self):
         """Envoie un résumé compact des stats du volontaire au manager."""

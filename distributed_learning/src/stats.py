@@ -28,6 +28,15 @@ class RoundStats:
     n_models_received:  int
     compression_ratio:  float          # original_bytes / compressed_bytes
     timestamp:          float = field(default_factory=time.time)
+    # New traceability fields
+    neighbors_info:     List[dict] = field(default_factory=list)  # voisins renvoyés par le manager (ressources + score)
+    sent_details:       List[dict] = field(default_factory=list)  # liste d'envois : dest, bytes, duration, ts_start, ts_end
+    recv_details:       List[dict] = field(default_factory=list)  # liste de réceptions : sender, bytes, send_duration, send_ts_start, send_ts_end, recv_ts
+    round_start_ts:     float = 0.0
+    round_end_ts:       float = 0.0
+    round_duration_s:   float = 0.0
+    best_test_acc_so_far: float = 0.0
+    best_test_acc_ts:   float = 0.0
 
 
 class StatsTracker:
@@ -101,14 +110,29 @@ class GlobalStats:
 
     # ─── Enregistrement ───────────────────────────────────────────────────────
 
-    def record_exchange(self, sender: str, receiver: str, payload_bytes: int) -> None:
+    def record_exchange(self, sender: str, receiver: str, payload_bytes: int, metadata: dict = None, delivered_ts: float = None) -> None:
+        """Enregistre un échange de modèle. Peut inclure des métadonnées optionnelles
+        fournies par l'expéditeur (ex: `send_ts_start`) et un timestamp de livraison
+        `delivered_ts` lorsque la livraison a eu lieu.
+        """
         with self._lock:
-            self._exchanges.append({
-                "sender":    sender,
-                "receiver":  receiver,
-                "bytes":     payload_bytes,
-                "timestamp": time.time(),
-            })
+            entry = {
+                "sender": sender,
+                "receiver": receiver,
+                "bytes": payload_bytes,
+                "queued_ts": time.time(),
+            }
+            if metadata:
+                # Copier les métadonnées utiles (payload_bytes, send_ts_start, ...)
+                entry.update({k: v for k, v in metadata.items() if k is not None})
+            if delivered_ts:
+                entry["delivered_ts"] = delivered_ts
+                if entry.get("send_ts_start"):
+                    try:
+                        entry["transfer_time_s"] = delivered_ts - float(entry.get("send_ts_start"))
+                    except Exception:
+                        entry["transfer_time_s"] = None
+            self._exchanges.append(entry)
             self._total_routed += payload_bytes
 
     def update_volunteer_summary(self, vol_ip: str, summary: dict) -> None:
@@ -127,6 +151,7 @@ class GlobalStats:
                 "total_bytes_routed":     self._total_routed,
                 "throughput_KB_per_s":    self._total_routed / max(runtime, 1) / 1024,
                 "volunteer_summaries":    dict(self._vol_stats),
+                "exchanges":              list(self._exchanges),
             }
 
     def print_summary(self) -> None:
