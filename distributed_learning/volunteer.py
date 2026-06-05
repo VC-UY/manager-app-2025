@@ -369,7 +369,6 @@ class Volunteer:
                 self.model, COMPRESSION,
                 bits=QUANTIZATION_BITS, ratio=SPARSIFICATION_RATIO
             )
-            # Ajouter des métadonnées d'envoi (remplies ici après envoi)
 
             conn = self._connect_manager()
             # Timestamp de début d'envoi à partager avec le destinataire via le manager
@@ -387,6 +386,7 @@ class Volunteer:
             conn.close()
 
             send_duration = send_ts_end - send_ts_start
+            meta["send_duration_s"] = send_duration
 
             if msg_type == MSG_ACK:
                 ratio = compression_ratio(self._model_bytes, len(compressed))
@@ -423,13 +423,21 @@ class Volunteer:
                     total_recv += len(payload)
                     # Tracer la réception
                     recv_ts = time.time()
+                    send_ts_start = meta.get("send_ts_start")
+                    transfer_time = None
+                    if send_ts_start is not None:
+                        try:
+                            transfer_time = recv_ts - float(send_ts_start)
+                        except Exception:
+                            transfer_time = None
                     recv_details.append({
                         "sender": data.get("sender_ip"),
                         "bytes": len(payload),
-                        "send_ts_start": meta.get("send_ts_start"),
+                        "send_ts_start": send_ts_start,
                         "payload_bytes": meta.get("payload_bytes"),
                         "recv_ts": recv_ts,
                         "send_duration_s": meta.get("send_duration_s"),
+                        "transfer_time_s": transfer_time,
                     })
                     logging.info(
                         f"Modèle reçu de {data.get('sender_ip')}  "

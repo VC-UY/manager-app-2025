@@ -1,7 +1,8 @@
+import csv
+import glob
 import json
 import matplotlib.pyplot as plt
 from pathlib import Path
-import glob
 
 path = Path('distributed_learning/results')
 path.mkdir(parents=True, exist_ok=True)
@@ -119,7 +120,71 @@ for ex in data.get('exchanges', []):
     report.append(f"- {s} → {r} : {b/1024:.1f} KB queued={q} delivered={d} transfer_time_s={tt}")
 
 # Write report
-with open(path / 'global_stats_report.md', 'w') as f:
+with open(path / 'global_stats_report.md', 'w', encoding='utf-8') as f:
     f.write('\n'.join(report))
 
-print('Generated report and charts in', path)
+# Export CSV global summary
+csv_summary_path = path / 'global_stats_volunteers.csv'
+with open(csv_summary_path, 'w', encoding='utf-8', newline='') as f:
+    writer = csv.writer(f)
+    writer.writerow([
+        'volunteer_ip', 'total_rounds', 'best_test_acc', 'final_test_acc',
+        'total_bytes_sent', 'total_bytes_received', 'total_train_duration_s',
+        'avg_compression_ratio'
+    ])
+    for v in ids:
+        vol = vols[v]
+        writer.writerow([
+            v,
+            vol.get('total_rounds', 0),
+            vol.get('best_test_acc', 0),
+            vol.get('final_test_acc', 0),
+            vol.get('total_bytes_sent', 0),
+            vol.get('total_bytes_received', 0),
+            vol.get('total_train_duration_s', 0),
+            vol.get('avg_compression_ratio', 0),
+        ])
+
+# Export CSV round-level details if available
+csv_rounds_path = path / 'global_stats_rounds.csv'
+with open(csv_rounds_path, 'w', encoding='utf-8', newline='') as f:
+    writer = csv.writer(f)
+    writer.writerow([
+        'volunteer_ip', 'round_num', 'round_duration_s', 'test_acc',
+        'best_test_acc_so_far', 'best_test_acc_ts', 'n_sent', 'n_recv'
+    ])
+    for ip, vf in vol_details.items():
+        for r in vf.get('rounds', []):
+            dur = r.get('round_duration_s') or (r.get('round_end_ts', 0) - r.get('round_start_ts', 0))
+            writer.writerow([
+                ip,
+                r.get('round_num', ''),
+                dur,
+                r.get('test_acc', ''),
+                r.get('best_test_acc_so_far', ''),
+                r.get('best_test_acc_ts', ''),
+                len(r.get('sent_details', [])),
+                len(r.get('recv_details', [])),
+            ])
+
+# Export CSV exchanges
+csv_exchanges_path = path / 'global_stats_exchanges.csv'
+with open(csv_exchanges_path, 'w', encoding='utf-8', newline='') as f:
+    writer = csv.writer(f)
+    writer.writerow([
+        'sender', 'receiver', 'bytes', 'queued_ts', 'delivered_ts',
+        'send_ts_start', 'send_duration_s', 'transfer_time_s'
+    ])
+    for ex in data.get('exchanges', []):
+        writer.writerow([
+            ex.get('sender', ''),
+            ex.get('receiver', ''),
+            ex.get('bytes', ''),
+            ex.get('queued_ts', ''),
+            ex.get('delivered_ts', ''),
+            ex.get('send_ts_start', ''),
+            ex.get('send_duration_s', ''),
+            ex.get('transfer_time_s', ''),
+        ])
+
+print('Generated report, charts, and CSV files in', path)

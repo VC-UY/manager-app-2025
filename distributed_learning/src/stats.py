@@ -107,6 +107,13 @@ class GlobalStats:
         self._vol_stats: Dict[str, dict] = {}    # résumé reçu de chaque volontaire
         self._total_routed = 0                   # octets routés au total
         os.makedirs(results_dir, exist_ok=True)
+        self._exchange_log_path = os.path.join(results_dir, "exchanges.log")
+        self._exchange_logger = logging.getLogger("exchanges")
+        self._exchange_logger.setLevel(logging.INFO)
+        if not self._exchange_logger.handlers:
+            fh = logging.FileHandler(self._exchange_log_path, encoding="utf-8")
+            fh.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+            self._exchange_logger.addHandler(fh)
 
     # ─── Enregistrement ───────────────────────────────────────────────────────
 
@@ -123,17 +130,17 @@ class GlobalStats:
                 "queued_ts": time.time(),
             }
             if metadata:
-                # Copier les métadonnées utiles (payload_bytes, send_ts_start, ...)
                 entry.update({k: v for k, v in metadata.items() if k is not None})
-            if delivered_ts:
+            if delivered_ts is not None:
                 entry["delivered_ts"] = delivered_ts
-                if entry.get("send_ts_start"):
+                if entry.get("send_ts_start") is not None:
                     try:
                         entry["transfer_time_s"] = delivered_ts - float(entry.get("send_ts_start"))
                     except Exception:
                         entry["transfer_time_s"] = None
             self._exchanges.append(entry)
             self._total_routed += payload_bytes
+            self._exchange_logger.info(json.dumps(entry, default=str))
 
     def update_volunteer_summary(self, vol_ip: str, summary: dict) -> None:
         with self._lock:
@@ -174,8 +181,25 @@ class GlobalStats:
         logging.info(sep)
 
     def save(self) -> str:
-        path = os.path.join(self.results_dir, "global_stats.json")
-        with open(path, "w", encoding="utf-8") as f:
+        summary_path = os.path.join(self.results_dir, "global_stats.json")
+        with open(summary_path, "w", encoding="utf-8") as f:
             json.dump(self.summary(), f, indent=2)
-        logging.info(f"[GlobalStats] Sauvegarde → {path}")
-        return path
+
+        exchanges_path = os.path.join(self.results_dir, "exchanges.csv")
+        try:
+            import csv
+            with open(exchanges_path, "w", encoding="utf-8", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=[
+                    "sender", "receiver", "bytes", "queued_ts", "delivered_ts",
+                    "send_ts_start", "send_duration_s", "transfer_time_s"
+                ])
+                writer.writeheader()
+                for ex in self._exchanges:
+                    writer.writerow({
+                        k: ex.get(k, "") for k in writer.fieldnames
+                    })
+        except Exception as exc:
+            logging.warning(f"Impossible d'écrire exchanges.csv : {exc}")
+
+        logging.info(f"[GlobalStats] Sauvegarde → {summary_path}")
+        return summary_path

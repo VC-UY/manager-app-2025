@@ -51,7 +51,7 @@ pattern `<username>/<image-name>:<version>` for Docker Hub to accept it.
 
 ```bash
 # From the distributed_learning/ directory (where the Dockerfile lives)
-docker build -t <dockerhub-username>/distributed-learning-volunteer:latest .
+docker build -t pablo93230/distributed-learning-volunteer:latest .
 ```
 
 **Example** with a real username:
@@ -112,7 +112,7 @@ that are committed to git.
 ## Step 4 — Push to Docker Hub
 
 ```bash
-docker push <dockerhub-username>/distributed-learning-volunteer:latest
+docker push pablo93230/distributed-learning-volunteer:latest
 ```
 
 The first push uploads every layer (~600 MB). Subsequent pushes upload only the
@@ -219,6 +219,34 @@ docker compose pull && docker compose up -d
 
 Thanks to Docker's layer caching, a fix in `compression.py` results in a
 ~5 KB download per volunteer, not a full 600 MB re-download.
+
+### Auto-update with Watchtower
+
+If you want volunteer machines to update automatically when you push a new
+image, enable the optional Watchtower service in `docker-compose.yml`.
+
+1. Start volunteer + Watchtower once:
+
+```bash
+docker compose up -d
+```
+
+2. Push a new image from your build machine:
+
+```bash
+docker build -t <dockerhub-username>/distributed-learning-volunteer:latest .
+docker push <dockerhub-username>/distributed-learning-volunteer:latest
+```
+
+3. Watchtower checks Docker Hub every 5 minutes (`--interval 300`) and will
+pull the new image + restart the volunteer container automatically.
+
+You can also use the helper script `enable_watchtower.sh` in the project root
+on the volunteer machine to start both services in one command.
+
+> Note: Watchtower requires access to the host Docker socket
+> (`/var/run/docker.sock`). This means the volunteer host must run Docker
+> locally and allow the socket mount.
 
 ---
 
