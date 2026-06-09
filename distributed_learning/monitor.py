@@ -75,17 +75,19 @@ def display(stats: dict, refresh: int, host: str, port: int):
     summaries = stats.get("volunteer_summaries", {})
     if summaries:
         print(f"\n  ─── Détail par volontaire ({len(summaries)}) ───────────────────────────────")
-        hdr = f"  {'IP Volontaire':<18} {'Round':>5}  {'Acc Test':>8}  {'Précision':22}  {'BW ↑ KB':>8}  {'Durée train':>11}"
+        hdr = f"  {'IP Volontaire':<18} {'Rounds':>7}  {'Acc Test':>8}  {'Précision':22}  {'BW ↑ KB':>8}  {'Durée train':>11}"
         print(hdr)
-        print(f"  {'─'*18} {'─'*5}  {'─'*8}  {'─'*22}  {'─'*8}  {'─'*11}")
+        print(f"  {'─'*18} {'─'*7}  {'─'*8}  {'─'*22}  {'─'*8}  {'─'*11}")
         for ip, vs in sorted(summaries.items()):
             acc     = vs.get("best_test_acc", vs.get("final_test_acc", 0))
-            rounds  = vs.get("total_rounds", vs.get("current_round", 0))
+            current = vs.get("current_round", vs.get("total_rounds", 0))
+            total   = vs.get("total_rounds", vs.get("current_round", 0))
+            rounds_str = f"{current}/{total}"
             bw_kb   = vs.get("total_bytes_sent", 0) / 1024
             dur_s   = vs.get("total_train_duration_s", 0)
             b       = bar(min(acc, 1.0))
             print(
-                f"  {ip:<18} {rounds:>5}  {acc:>7.1%}  {b}  {bw_kb:>8.1f}  {dur_s:>9.1f}s"
+                f"  {ip:<18} {rounds_str:>7}  {acc:>7.1%}  {b}  {bw_kb:>8.1f}  {dur_s:>9.1f}s"
             )
 
         # Résumé agrégé
