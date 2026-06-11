@@ -1,0 +1,231 @@
+2026-06-08 22:21:07  [MANAGER]       INFO      Manager démarré — écoute 192.168.1.106:9001
+2026-06-08 22:21:15  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:21:15  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:21:20  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:21:20  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:21:25  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:21:25  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:21:30  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:21:30  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:21:35  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:21:35  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:21:40  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:21:40  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:21:45  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:21:45  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:21:50  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:21:50  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:21:55  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:21:55  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:22:00  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:22:00  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:22:05  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:22:05  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:22:08  [MANAGER]       INFO      ================================================================
+2026-06-08 22:22:08  [MANAGER]       INFO      STATISTIQUES GLOBALES DU SYSTÈME
+2026-06-08 22:22:08  [MANAGER]       INFO      ================================================================
+2026-06-08 22:22:08  [MANAGER]       INFO        Durée d'exécution    : 60 s
+2026-06-08 22:22:08  [MANAGER]       INFO        Volontaires actifs   : 1
+2026-06-08 22:22:08  [MANAGER]       INFO        Échanges de modèles  : 0
+2026-06-08 22:22:08  [MANAGER]       INFO        Octets routés        : 0.00 MB
+2026-06-08 22:22:08  [MANAGER]       INFO        Débit moyen          : 0.0 KB/s
+2026-06-08 22:22:08  [MANAGER]       INFO        [192.168.1.106] rounds=13  best_acc=0.211  BW_sent=0 KB
+2026-06-08 22:22:08  [MANAGER]       INFO      ================================================================
+2026-06-08 22:22:10  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:22:10  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:22:15  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:22:15  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:22:20  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:22:20  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:22:25  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:22:25  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:22:30  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:22:30  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:22:35  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:22:35  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:22:40  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:22:40  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:22:45  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:22:45  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:22:50  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:22:50  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:22:55  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:22:55  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:23:00  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:23:00  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:23:05  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:23:05  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:23:08  [MANAGER]       INFO      ================================================================
+2026-06-08 22:23:08  [MANAGER]       INFO      STATISTIQUES GLOBALES DU SYSTÈME
+2026-06-08 22:23:08  [MANAGER]       INFO      ================================================================
+2026-06-08 22:23:08  [MANAGER]       INFO        Durée d'exécution    : 120 s
+2026-06-08 22:23:08  [MANAGER]       INFO        Volontaires actifs   : 1
+2026-06-08 22:23:08  [MANAGER]       INFO        Échanges de modèles  : 0
+2026-06-08 22:23:08  [MANAGER]       INFO        Octets routés        : 0.00 MB
+2026-06-08 22:23:08  [MANAGER]       INFO        Débit moyen          : 0.0 KB/s
+2026-06-08 22:23:08  [MANAGER]       INFO        [192.168.1.106] rounds=13  best_acc=0.211  BW_sent=0 KB
+2026-06-08 22:23:08  [MANAGER]       INFO      ================================================================
+2026-06-08 22:23:10  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:23:10  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:23:15  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:23:15  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:23:20  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:23:20  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:23:25  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:23:25  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:23:30  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:23:30  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:23:35  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:23:35  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:23:40  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:23:40  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:23:45  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:23:45  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:23:50  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:23:50  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:23:55  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:23:55  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:24:00  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:24:00  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:24:05  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:24:05  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:24:08  [MANAGER]       INFO      ================================================================
+2026-06-08 22:24:08  [MANAGER]       INFO      STATISTIQUES GLOBALES DU SYSTÈME
+2026-06-08 22:24:08  [MANAGER]       INFO      ================================================================
+2026-06-08 22:24:08  [MANAGER]       INFO        Durée d'exécution    : 180 s
+2026-06-08 22:24:08  [MANAGER]       INFO        Volontaires actifs   : 1
+2026-06-08 22:24:08  [MANAGER]       INFO        Échanges de modèles  : 0
+2026-06-08 22:24:08  [MANAGER]       INFO        Octets routés        : 0.00 MB
+2026-06-08 22:24:08  [MANAGER]       INFO        Débit moyen          : 0.0 KB/s
+2026-06-08 22:24:08  [MANAGER]       INFO        [192.168.1.106] rounds=14  best_acc=0.211  BW_sent=0 KB
+2026-06-08 22:24:08  [MANAGER]       INFO      ================================================================
+2026-06-08 22:24:10  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:24:10  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:24:15  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:24:15  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:24:20  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:24:20  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:24:25  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:24:25  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:24:30  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:24:30  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:24:35  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:24:35  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:24:40  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:24:40  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:24:45  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:24:45  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:24:50  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:24:50  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:24:55  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:24:55  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:25:00  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:25:00  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:25:05  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:25:05  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:25:08  [MANAGER]       INFO      ================================================================
+2026-06-08 22:25:08  [MANAGER]       INFO      STATISTIQUES GLOBALES DU SYSTÈME
+2026-06-08 22:25:08  [MANAGER]       INFO      ================================================================
+2026-06-08 22:25:08  [MANAGER]       INFO        Durée d'exécution    : 240 s
+2026-06-08 22:25:08  [MANAGER]       INFO        Volontaires actifs   : 1
+2026-06-08 22:25:08  [MANAGER]       INFO        Échanges de modèles  : 0
+2026-06-08 22:25:08  [MANAGER]       INFO        Octets routés        : 0.00 MB
+2026-06-08 22:25:08  [MANAGER]       INFO        Débit moyen          : 0.0 KB/s
+2026-06-08 22:25:08  [MANAGER]       INFO        [192.168.1.106] rounds=14  best_acc=0.211  BW_sent=0 KB
+2026-06-08 22:25:08  [MANAGER]       INFO      ================================================================
+2026-06-08 22:25:10  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:25:10  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:25:15  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:25:15  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:25:20  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:25:20  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:25:25  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:25:25  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:25:30  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:25:30  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:25:35  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:25:35  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:25:40  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:25:40  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:25:45  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:25:45  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:25:50  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:25:50  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:25:55  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:25:55  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:26:00  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:26:00  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:26:05  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:26:05  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:26:08  [MANAGER]       INFO      ================================================================
+2026-06-08 22:26:08  [MANAGER]       INFO      STATISTIQUES GLOBALES DU SYSTÈME
+2026-06-08 22:26:08  [MANAGER]       INFO      ================================================================
+2026-06-08 22:26:08  [MANAGER]       INFO        Durée d'exécution    : 300 s
+2026-06-08 22:26:08  [MANAGER]       INFO        Volontaires actifs   : 1
+2026-06-08 22:26:08  [MANAGER]       INFO        Échanges de modèles  : 0
+2026-06-08 22:26:08  [MANAGER]       INFO        Octets routés        : 0.00 MB
+2026-06-08 22:26:08  [MANAGER]       INFO        Débit moyen          : 0.0 KB/s
+2026-06-08 22:26:08  [MANAGER]       INFO        [192.168.1.106] rounds=15  best_acc=0.211  BW_sent=0 KB
+2026-06-08 22:26:08  [MANAGER]       INFO      ================================================================
+2026-06-08 22:26:10  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:26:10  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:26:15  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:26:15  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:26:20  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:26:20  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:26:25  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:26:25  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:26:30  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:26:30  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:26:35  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:26:35  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:26:40  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:26:40  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:26:45  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:26:45  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:26:50  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:26:50  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:26:55  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:26:55  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:27:00  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:27:00  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:27:05  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:27:05  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:27:08  [MANAGER]       INFO      ================================================================
+2026-06-08 22:27:08  [MANAGER]       INFO      STATISTIQUES GLOBALES DU SYSTÈME
+2026-06-08 22:27:08  [MANAGER]       INFO      ================================================================
+2026-06-08 22:27:08  [MANAGER]       INFO        Durée d'exécution    : 360 s
+2026-06-08 22:27:08  [MANAGER]       INFO        Volontaires actifs   : 1
+2026-06-08 22:27:08  [MANAGER]       INFO        Échanges de modèles  : 0
+2026-06-08 22:27:08  [MANAGER]       INFO        Octets routés        : 0.00 MB
+2026-06-08 22:27:08  [MANAGER]       INFO        Débit moyen          : 0.0 KB/s
+2026-06-08 22:27:08  [MANAGER]       INFO        [192.168.1.106] rounds=15  best_acc=0.211  BW_sent=0 KB
+2026-06-08 22:27:08  [MANAGER]       INFO      ================================================================
+2026-06-08 22:27:10  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:27:10  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:27:15  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:27:15  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:27:20  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:27:20  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:27:25  [MANAGER]       INFO      Volontaire mis à jour: MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  CPU=8 cores  RAM=7.4GB  Network=1000.0Mbps
+2026-06-08 22:27:25  [MANAGER]       INFO      Liste volontaires mise à jour : 1 volontaires
+2026-06-08 22:27:26  [MANAGER]       INFO      Arrêt du manager…
+2026-06-08 22:27:26  [MANAGER]       INFO      ================================================================
+2026-06-08 22:27:26  [MANAGER]       INFO      STATISTIQUES GLOBALES DU SYSTÈME
+2026-06-08 22:27:26  [MANAGER]       INFO      ================================================================
+2026-06-08 22:27:26  [MANAGER]       INFO        Durée d'exécution    : 379 s
+2026-06-08 22:27:26  [MANAGER]       INFO        Volontaires actifs   : 1
+2026-06-08 22:27:26  [MANAGER]       INFO        Échanges de modèles  : 0
+2026-06-08 22:27:26  [MANAGER]       INFO        Octets routés        : 0.00 MB
+2026-06-08 22:27:26  [MANAGER]       INFO      Arrêt du manager…
+2026-06-08 22:27:26  [MANAGER]       INFO      ================================================================
+2026-06-08 22:27:26  [MANAGER]       INFO      STATISTIQUES GLOBALES DU SYSTÈME
+2026-06-08 22:27:26  [MANAGER]       INFO      ================================================================
+2026-06-08 22:27:26  [MANAGER]       INFO        Durée d'exécution    : 379 s
+2026-06-08 22:27:26  [MANAGER]       INFO        Volontaires actifs   : 1
+2026-06-08 22:27:26  [MANAGER]       INFO        Échanges de modèles  : 0
+2026-06-08 22:27:26  [MANAGER]       INFO        Octets routés        : 0.00 MB
+2026-06-08 22:27:26  [MANAGER]       INFO        Débit moyen          : 0.0 KB/s
+2026-06-08 22:27:26  [MANAGER]       INFO        [192.168.1.106] rounds=15  best_acc=0.211  BW_sent=0 KB
+2026-06-08 22:27:26  [MANAGER]       INFO      ================================================================
+2026-06-08 22:27:26  [MANAGER]       INFO      [GlobalStats] Sauvegarde → ./results/global_stats.json

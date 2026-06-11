@@ -19,6 +19,7 @@ Démarrage :
 """
 import argparse
 import logging
+import math
 import os
 import random
 import signal
@@ -43,6 +44,7 @@ from src.config import (
     COMPRESSION, QUANTIZATION_BITS, SPARSIFICATION_RATIO,
     HEARTBEAT_INTERVAL, SOCKET_TIMEOUT,
     MAX_RETRIES, RETRY_DELAY, LOG_LEVEL, STATS_DIR,
+    SW_UCB_CONFIDENCE,
 )
 from src.protocol import (
     send_message, receive_message,
@@ -57,6 +59,7 @@ from src.dataset import load_dataset
 from src.compression import compress_model, decompress_model, average_models, compression_ratio
 from src.stats import StatsTracker
 from src.volunteer_node import VolunteerNode, get_mac_address, get_resource_info
+from src.topology import get_k_nearest_neighbors
 
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL, logging.INFO),
@@ -105,6 +108,7 @@ class Volunteer:
         self._current_round = 0
         self.max_rounds     = MAX_ROUNDS
         self._neighbors: List[dict] = []
+        self._neighbor_request_count = 0
         self._nb_lock = threading.Lock()
 
         self._model_bytes = model_parameter_bytes(self.model)
@@ -342,10 +346,8 @@ class Volunteer:
     # ─── Communication avec le Manager ────────────────────────────────────────
 
     def _fetch_neighbors(self) -> List[dict]:
-        """Demande la liste des k voisins XOR au Manager.
-
-        Le manager renvoie des objets de nœud contenant l'adresse MAC, l'IP
-        courante et les ressources allouées pour la sélection adaptative.
+        """Demande la liste complète des volontaires au Manager et calcule localement
+        les k voisins les plus proches via XOR et les ordonne avec SW-UCB.
         """
         for attempt in range(MAX_RETRIES):
             try:
@@ -355,12 +357,62 @@ class Volunteer:
                 msg_type, data, _ = receive_message(conn)
                 conn.close()
                 if msg_type == MSG_NEIGHBORS_RESPONSE:
-                    return data.get("neighbors", [])
+                    volunteers_data = data.get("volunteers", [])
+                    if not volunteers_data:
+                        return []
+                    return self._compute_local_neighbors(volunteers_data)
             except Exception as exc:
                 logging.warning(f"Voisins (essai {attempt+1}) : {exc}")
                 if attempt < MAX_RETRIES - 1:
                     time.sleep(RETRY_DELAY)
         return []
+
+    def _compute_local_neighbors(self, volunteers_data: List[dict]) -> List[dict]:
+        """Calcule localement le voisinage XOR et trie par SW-UCB."""
+        my_mac = self.mac_address
+
+        # Extraire tous les MACs des autres volontaires
+        all_candidate_macs = [v["mac_address"] for v in volunteers_data if v["mac_address"] != my_mac]
+
+        if not all_candidate_macs:
+            return []
+
+        # Obtenir les k plus proches voisins par distance XOR
+        k_nearest = get_k_nearest_neighbors(my_mac, all_candidate_macs, K_NEIGHBORS)
+
+        # Classer par SW-UCB
+        self._neighbor_request_count += 1
+        t = max(1, self._neighbor_request_count)
+
+        vol_by_mac = {v["mac_address"]: v for v in volunteers_data}
+
+        scored = []
+        for mac in k_nearest:
+            node_dict = vol_by_mac.get(mac)
+            if not node_dict:
+                continue
+            history = node_dict.get("bandwidth_history", [])
+            if history:
+                avg = sum(history) / len(history)
+                count = len(history)
+                bonus = SW_UCB_CONFIDENCE * math.sqrt(2 * math.log(t) / count)
+                score = avg + bonus
+            else:
+                base = node_dict.get("resources", {}).get("network_bandwidth_mbps", 1000.0)
+                score = base + SW_UCB_CONFIDENCE * math.sqrt(2 * math.log(t))
+            scored.append((mac, score))
+
+        scored.sort(key=lambda item: item[1], reverse=True)
+
+        neighbors_info = []
+        for idx, (mac, score) in enumerate(scored, start=1):
+            node_dict = vol_by_mac[mac]
+            info = dict(node_dict)
+            info["sw_ucb_score"] = score
+            info["sw_ucb_rank"] = idx
+            neighbors_info.append(info)
+
+        return neighbors_info
 
     def _push_model(self, dest_ip: str):
         """Compresse et envoie le modèle au Manager à destination de dest_ip."""

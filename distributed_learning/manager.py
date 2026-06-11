@@ -44,7 +44,6 @@ from src.protocol import (
     MSG_STATS_REQUEST, MSG_STATS_RESPONSE, MSG_STATS_PUSH,
     MSG_ACK, MSG_ERROR,
 )
-from src.topology import get_k_nearest_neighbors
 from src.stats import GlobalStats
 from src.volunteer_node import VolunteerNode
 
@@ -72,7 +71,6 @@ class Manager:
             lambda: deque(maxlen=SW_UCB_WINDOW)
         )
         self._neighbor_stats_prev: Dict[str, dict] = {}
-        self._neighbor_request_count = 0
         self._running = True
 
     # ─── Entrée principale ────────────────────────────────────────────────────
@@ -171,28 +169,6 @@ class Manager:
             if delta_bytes > 0 and elapsed > 0:
                 return (delta_bytes * 8) / elapsed / 1_000_000
         return node.resources.network_bandwidth_mbps if node is not None else 0.0
-
-    def _score_neighbors(self, neighbor_macs: List[str]) -> List[Tuple[str, float]]:
-        """Classe les voisins les plus proches en priorité SW-UCB sur la bande passante."""
-        self._neighbor_request_count += 1
-        t = max(1, self._neighbor_request_count)
-        scored = []
-
-        for mac in neighbor_macs:
-            history = self._neighbor_rewards[mac]
-            if history:
-                avg = sum(history) / len(history)
-                count = len(history)
-                bonus = SW_UCB_CONFIDENCE * math.sqrt(2 * math.log(t) / count)
-                score = avg + bonus
-            else:
-                node = self._volunteers.get(mac)
-                base = node.resources.network_bandwidth_mbps if node is not None else 0.0
-                score = base + SW_UCB_CONFIDENCE * math.sqrt(2 * math.log(t))
-            scored.append((mac, score))
-
-        scored.sort(key=lambda item: item[1], reverse=True)
-        return scored
 
     # ─── Handlers ─────────────────────────────────────────────────────────────
 
@@ -337,44 +313,19 @@ class Manager:
             logging.debug(f"Enregistrement échange échoué: {e}")
 
     def _on_neighbors_request(self, conn: socket.socket,
-                              vol_ip: str, data: dict):
-        """Calcule et retourne les k voisins XOR du volontaire.
-        Supporte à la fois les IP et les MAC comme identifiants.
+                               vol_ip: str, data: dict):
+        """Retourne la liste complète de tous les volontaires avec leur historique de bande passante.
+        La détermination du voisinage XOR et le score UCB sont délégués au volontaire lui-même.
         """
-        k = data.get("k", K_NEIGHBORS)
-        req_ip_or_mac = data.get("volunteer_ip") or data.get("volunteer_mac", vol_ip)
-
         with self._vol_lock:
-            all_macs = list(self._volunteers.keys())
-            
-            # Si c'est une IP, chercher le MAC
-            req_mac = req_ip_or_mac
-            if req_mac in self._ip_to_mac:
-                req_mac = self._ip_to_mac[req_mac]
-            elif req_mac not in self._volunteers:
-                # Chercher en comparant les IPs
-                for mac, node in self._volunteers.items():
-                    if node.current_ip == req_ip_or_mac:
-                        req_mac = mac
-                        break
+            vol_list = []
+            for mac, node in self._volunteers.items():
+                node_dict = node.to_dict()
+                node_dict["bandwidth_history"] = list(self._neighbor_rewards[mac])
+                vol_list.append(node_dict)
 
-            if req_mac not in self._volunteers:
-                send_message(conn, MSG_NEIGHBORS_RESPONSE, {"neighbors": []})
-                logging.warning(f"Neighbors request inconnu : {req_ip_or_mac}")
-                return
-
-            neighbors = get_k_nearest_neighbors(req_mac, all_macs, k)
-            scored = self._score_neighbors(neighbors)  # list[(mac, score)]
-            # Construire l'info renvoyée en incluant le score SW-UCB et le rang
-            neighbors_info = []
-            for idx, (mac, score) in enumerate(scored, start=1):
-                node_dict = self._volunteers[mac].to_dict()
-                node_dict["sw_ucb_score"] = score
-                node_dict["sw_ucb_rank"] = idx
-                neighbors_info.append(node_dict)
-
-        send_message(conn, MSG_NEIGHBORS_RESPONSE, {"neighbors": neighbors_info})
-        logging.debug(f"Voisins de {req_mac} : {[m for m, _ in scored]}")
+        send_message(conn, MSG_NEIGHBORS_RESPONSE, {"volunteers": vol_list})
+        logging.debug(f"Manager a envoyé la liste complète des volontaires ({len(vol_list)}) pour calcul local.")
 
     def _on_stats_push(self, data: dict):
         """Enregistre le résumé de stats poussé par un volontaire."""

@@ -26,7 +26,7 @@ WORKDIR /app
 # does NOT reinstall PyTorch. Volunteers pulling an updated image download only
 # the changed layer (a few KB), not the full dependency stack (hundreds of MB).
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --timeout=600 --retries=10 -r requirements.txt
 
 # ─── Data (cached layer) ─────────────────────────────────────────────────────
 # Placed before application code so that a code change in src/ or volunteer.py

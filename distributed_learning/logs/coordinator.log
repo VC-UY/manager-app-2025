@@ -1,0 +1,12 @@
+2026-06-08 22:21:09  [COORDINATEUR]  INFO      Coordinateur démarré — écoute 192.168.1.106:9000
+2026-06-08 22:21:09  [COORDINATEUR]  INFO      Manager cible : 192.168.1.106:9001
+2026-06-08 22:21:13  [COORDINATEUR]  INFO      Volontaire connecté : MAC=74:40:BB:A8:AF:C3  IP=192.168.1.106  Ressources: CPU=8 cores, RAM=7.4GB, Network=1000.0Mbps  (total : 1)
+2026-06-08 22:27:27  [COORDINATEUR]  INFO      Arrêt du coordinateur…
+2026-06-08 22:27:27  [COORDINATEUR]  INFO      Arrêt du coordinateur…
+Exception ignored in: <module 'threading' from '/usr/lib/python3.10/threading.py'>
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1518, in _shutdown
+    def _shutdown():
+  File "/home/pablo/Bureau/Master 2/Memoire/dist2/distributed_learning_2/distributed_learning/coordinator.py", line 223, in _shutdown
+    sys.exit(0)
+SystemExit: 0

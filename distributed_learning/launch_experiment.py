@@ -68,9 +68,9 @@ def main():
     parser.add_argument("--dataset",          default="mnist",
                         choices=["mnist", "cifar10"],
                         help="Dataset (défaut: mnist)")
-    parser.add_argument("--partition",        default="non-iid",
+    parser.add_argument("--partition",        default="iid",
                         choices=["iid", "non-iid"],
-                        help="Partition des données (défaut: non-iid)")
+                        help="Partition des données (défaut: iid)")
     parser.add_argument("--compression",      default="quantization",
                         choices=["quantization", "sparsification", "none"],
                         help="Méthode de compression (défaut: quantization)")
@@ -80,7 +80,7 @@ def main():
                         help="Secondes entre rounds gossip (défaut: 30)")
     parser.add_argument("--local-epochs",     type=int,   default=3,
                         help="Epochs d'entraînement local par round (défaut: 3)")
-    parser.add_argument("--max-rounds",       type=int,   default=30,
+    parser.add_argument("--max-rounds",       type=int,   default=15,
                         help="Nombre maximum de rounds (défaut: 30, 0 = sans limite)")
     parser.add_argument("--sparsity",         type=float, default=0.05,
                         help="Ratio top-k pour sparsification (défaut: 0.05)")
@@ -99,12 +99,12 @@ def main():
 
     # Variables d'environnement partagées
     base_env = {
-        "MANAGER_HOST":          "192.168.1.106",
+        "MANAGER_HOST":          "127.0.0.1",
         "MANAGER_PORT":          "9001",
-        "MANAGER_EXTERNAL_HOST": "192.168.1.106",
-        "COORDINATOR_HOST":      "192.168.1.106",
+        "MANAGER_EXTERNAL_HOST": "127.0.0.1",
+        "COORDINATOR_HOST":      "127.0.0.1",
         "COORDINATOR_PORT":      "9000",
-        "COORDINATOR_EXTERNAL_HOST": "192.168.1.106",
+        "COORDINATOR_EXTERNAL_HOST": "127.0.0.1",
         "K_NEIGHBORS":           str(args.k),
         "GOSSIP_INTERVAL":       str(args.gossip_interval),
         "GOSSIP_FANOUT":         "1",
@@ -119,7 +119,7 @@ def main():
         "HEARTBEAT_TIMEOUT":     "35",
         "SOCKET_TIMEOUT":        "30",
         "MAX_RETRIES":           "3",
-        "RETRY_DELAY":           "3.0",
+        "RETRY_DELAY":           "3",
         "STATS_DIR":             "./results",
         "STATS_PRINT_INTERVAL":  "60",
         "LOG_LEVEL":             "INFO",
