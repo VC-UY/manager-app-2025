@@ -325,7 +325,11 @@ class Manager:
                 vol_list.append(node_dict)
 
         send_message(conn, MSG_NEIGHBORS_RESPONSE, {"volunteers": vol_list})
-        logging.debug(f"Manager a envoyé la liste complète des volontaires ({len(vol_list)}) pour calcul local.")
+        logging.info(
+            f"[Demande voisins] Réponse au volontaire {vol_ip} : "
+            f"{len(vol_list)} volontaires au total "
+            f"(incluant le demandeur pour que XOR calcule tous les voisins possibles)"
+        )
 
     def _on_stats_push(self, data: dict):
         """Enregistre le résumé de stats poussé par un volontaire."""

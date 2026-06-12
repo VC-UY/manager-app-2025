@@ -136,7 +136,9 @@ class Volunteer:
         ).start()
 
         # Pause courte pour que le coordinateur transmette la liste au manager
-        time.sleep(8)
+        logging.info("Attente d'enregistrement du coordinateur (15s pour synchronisation)…")
+        time.sleep(15)
+        logging.info("Démarrage de la boucle gossip.")
 
         self._gossip_loop()
 
@@ -358,27 +360,48 @@ class Volunteer:
                 conn.close()
                 if msg_type == MSG_NEIGHBORS_RESPONSE:
                     volunteers_data = data.get("volunteers", [])
+                    logging.debug(f"[Demande voisins] Manager a retourné {len(volunteers_data)} volontaires")
                     if not volunteers_data:
-                        return []
+                        logging.warning("[Demande voisins] Manager n'a retourné aucun volontaire (pas encore enregistrés?)")
+                        if attempt < MAX_RETRIES - 1:
+                            time.sleep(RETRY_DELAY)
+                        continue
                     return self._compute_local_neighbors(volunteers_data)
             except Exception as exc:
-                logging.warning(f"Voisins (essai {attempt+1}) : {exc}")
+                logging.warning(f"[Demande voisins] Essai {attempt+1}/{MAX_RETRIES} échoué : {exc}")
                 if attempt < MAX_RETRIES - 1:
                     time.sleep(RETRY_DELAY)
+        logging.error("[Demande voisins] Impossible d'obtenir la liste des volontaires après plusieurs tentatives")
         return []
 
     def _compute_local_neighbors(self, volunteers_data: List[dict]) -> List[dict]:
         """Calcule localement le voisinage XOR et trie par SW-UCB."""
         my_mac = self.mac_address
+        
+        logging.debug(f"[Calcul voisins] Total volontaires reçus du manager : {len(volunteers_data)}")
 
         # Extraire tous les MACs des autres volontaires
         all_candidate_macs = [v["mac_address"] for v in volunteers_data if v["mac_address"] != my_mac]
+        logging.info(f"[Calcul voisins] Candidats disponibles : {len(all_candidate_macs)} (après exclusion du soi-même)")
 
         if not all_candidate_macs:
+            logging.warning(
+                f"[Calcul voisins] Aucun autre volontaire disponible pour former le voisinage XOR. "
+                f"En attente d'autres volontaires…"
+            )
             return []
 
         # Obtenir les k plus proches voisins par distance XOR
-        k_nearest = get_k_nearest_neighbors(my_mac, all_candidate_macs, K_NEIGHBORS)
+        k_neighbors_requested = min(K_NEIGHBORS, len(all_candidate_macs))
+        k_nearest = get_k_nearest_neighbors(my_mac, all_candidate_macs, k_neighbors_requested)
+        logging.info(
+            f"[Calcul voisins] XOR : demandé {K_NEIGHBORS} voisins, "
+            f"obtenu {len(k_nearest)} (candidats : {len(all_candidate_macs)})"
+        )
+
+        if not k_nearest:
+            logging.warning("[Calcul voisins] Calcul XOR a retourné une liste vide.")
+            return []
 
         # Classer par SW-UCB
         self._neighbor_request_count += 1
@@ -390,6 +413,7 @@ class Volunteer:
         for mac in k_nearest:
             node_dict = vol_by_mac.get(mac)
             if not node_dict:
+                logging.warning(f"[Calcul voisins] MAC {mac} introuvable dans les données reçues.")
                 continue
             history = node_dict.get("bandwidth_history", [])
             if history:
@@ -397,9 +421,11 @@ class Volunteer:
                 count = len(history)
                 bonus = SW_UCB_CONFIDENCE * math.sqrt(2 * math.log(t) / count)
                 score = avg + bonus
+                logging.debug(f"[Calcul voisins] {mac}: moyenne={avg:.2f}, historique={len(history)}, score={score:.2f}")
             else:
                 base = node_dict.get("resources", {}).get("network_bandwidth_mbps", 1000.0)
                 score = base + SW_UCB_CONFIDENCE * math.sqrt(2 * math.log(t))
+                logging.debug(f"[Calcul voisins] {mac}: BW_base={base:.2f}, score={score:.2f} (pas historique)")
             scored.append((mac, score))
 
         scored.sort(key=lambda item: item[1], reverse=True)
@@ -412,6 +438,10 @@ class Volunteer:
             info["sw_ucb_rank"] = idx
             neighbors_info.append(info)
 
+        logging.info(
+            f"[Calcul voisins] Topologie finalisée : {len(neighbors_info)} voisins "
+            f"(scores SW-UCB: {[f'{s:.2f}' for _, s in scored]})"
+        )
         return neighbors_info
 
     def _push_model(self, dest_ip: str):
@@ -564,22 +594,43 @@ class Volunteer:
 # ─── CLI ──────────────────────────────────────────────────────────────────────
 
 def parse_args():
+    # Charger les valeurs depuis les variables d'environnement en guise de valeurs par défaut
+    env_id = os.getenv("VOLUNTEER_ID")
+    env_coord = os.getenv("COORDINATOR_HOST")
+    env_manager = os.getenv("MANAGER_HOST")
+    env_n_vol = os.getenv("N_VOLUNTEERS")
+    env_my_ip = os.getenv("MY_IP")
+    env_cpu = os.getenv("CPU_CORES")
+    env_ram = os.getenv("RAM_GB")
+    env_net = os.getenv("NETWORK_MBPS")
+
     p = argparse.ArgumentParser(description="Nœud Volontaire — Apprentissage distribué")
-    p.add_argument("--id",           type=int, required=True,
+    p.add_argument("--id",           type=int,
+                   default=int(env_id) if env_id is not None else None,
+                   required=env_id is None,
                    help="Identifiant du volontaire (0-indexé)")
-    p.add_argument("--n-volunteers", type=int, default=5,
+    p.add_argument("--n-volunteers", type=int,
+                   default=int(env_n_vol) if env_n_vol is not None else 5,
                    help="Nombre total de volontaires attendus")
-    p.add_argument("--coordinator",  type=str, required=True,
+    p.add_argument("--coordinator",  type=str,
+                   default=env_coord,
+                   required=env_coord is None,
                    help="IP/hostname du coordinateur")
-    p.add_argument("--manager",      type=str, required=True,
+    p.add_argument("--manager",      type=str,
+                   default=env_manager,
+                   required=env_manager is None,
                    help="IP/hostname du manager")
-    p.add_argument("--my-ip",        type=str, default="",
+    p.add_argument("--my-ip",        type=str,
+                   default=env_my_ip if env_my_ip is not None else "",
                    help="IP publique de cette machine (détection auto si omis)")
-    p.add_argument("--cpu-cores",    type=int, default=None,
+    p.add_argument("--cpu-cores",    type=int,
+                   default=int(env_cpu) if env_cpu else None,
                    help="Nombre de cœurs CPU alloués (détection auto si omis)")
-    p.add_argument("--ram-gb",       type=float, default=None,
+    p.add_argument("--ram-gb",       type=float,
+                   default=float(env_ram) if env_ram else None,
                    help="RAM allouée en GB (détection auto si omis)")
-    p.add_argument("--network-mbps", type=float, default=None,
+    p.add_argument("--network-mbps", type=float,
+                   default=float(env_net) if env_net else None,
                    help="Bande passante réseau allouée en Mbps (défaut 1000)")
     return p.parse_args()
 

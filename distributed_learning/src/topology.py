@@ -29,11 +29,15 @@ def get_k_nearest_neighbors(my_ip: str,
     triés par distance XOR croissante.
     """
     candidates = [(ip, xor_distance(my_ip, ip)) for ip in all_ips if ip != my_ip]
+    if not candidates:
+        logging.debug(f"[Topology] Calcul XOR : pas de candidats disponibles pour {my_ip}")
+        return []
+    
     candidates.sort(key=lambda t: t[1])
     neighbors = [ip for ip, _ in candidates[:k]]
     logging.debug(
-        f"[Topology] {my_ip} → voisins : {neighbors} "
-        f"(sur {len(all_ips)} nœuds connus)"
+        f"[Topology] Calcul XOR : {my_ip} → {len(neighbors)} voisins parmi {len(candidates)} candidats "
+        f"(demandé k={k})"
     )
     return neighbors
 
