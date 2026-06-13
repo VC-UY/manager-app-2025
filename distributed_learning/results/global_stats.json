@@ -1,0 +1,80 @@
+{
+  "runtime_s": 595.9098079204559,
+  "n_active_volunteers": 7,
+  "total_model_exchanges": 0,
+  "total_bytes_routed": 0,
+  "throughput_KB_per_s": 0.0,
+  "volunteer_summaries": {
+    "192.168.1.160": {
+      "current_round": 17,
+      "total_rounds": 17,
+      "best_test_acc": 0.9879,
+      "final_test_acc": 0.9879,
+      "total_bytes_sent": 0,
+      "total_bytes_received": 0,
+      "total_train_duration_s": 929.6264362335205,
+      "avg_compression_ratio": 1.0
+    },
+    "192.168.1.106": {
+      "current_round": 2,
+      "total_rounds": 2,
+      "best_test_acc": 0.9781,
+      "final_test_acc": 0.9781,
+      "total_bytes_sent": 0,
+      "total_bytes_received": 0,
+      "total_train_duration_s": 83.61241912841797,
+      "avg_compression_ratio": 1.0
+    },
+    "192.168.1.195": {
+      "current_round": 12,
+      "total_rounds": 12,
+      "best_test_acc": 0.9871,
+      "final_test_acc": 0.9865,
+      "total_bytes_sent": 0,
+      "total_bytes_received": 0,
+      "total_train_duration_s": 117.47604155540466,
+      "avg_compression_ratio": 1.0
+    },
+    "192.168.43.40": {
+      "current_round": 29,
+      "total_rounds": 29,
+      "best_test_acc": 0.989,
+      "final_test_acc": 0.9885,
+      "total_bytes_sent": 0,
+      "total_bytes_received": 0,
+      "total_train_duration_s": 734.9499378204346,
+      "avg_compression_ratio": 1.0
+    },
+    "192.168.1.151": {
+      "current_round": 8,
+      "total_rounds": 8,
+      "best_test_acc": 0.986,
+      "final_test_acc": 0.9853,
+      "total_bytes_sent": 0,
+      "total_bytes_received": 0,
+      "total_train_duration_s": 342.1119692325592,
+      "avg_compression_ratio": 1.0
+    },
+    "192.168.65.3": {
+      "current_round": 6,
+      "total_rounds": 6,
+      "best_test_acc": 0.9869,
+      "final_test_acc": 0.9851,
+      "total_bytes_sent": 0,
+      "total_bytes_received": 0,
+      "total_train_duration_s": 66.8047661781311,
+      "avg_compression_ratio": 1.0
+    },
+    "192.168.1.187": {
+      "current_round": 4,
+      "total_rounds": 4,
+      "best_test_acc": 0.9843,
+      "final_test_acc": 0.9839,
+      "total_bytes_sent": 0,
+      "total_bytes_received": 0,
+      "total_train_duration_s": 42.124347448349,
+      "avg_compression_ratio": 1.0
+    }
+  },
+  "exchanges": []
+}

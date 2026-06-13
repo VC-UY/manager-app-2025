@@ -224,9 +224,17 @@ class Volunteer:
                 logging.info(f"Envoi adaptatif vers : {target_macs}")
                 for target in targets:
                     dest_mac = target.get("mac_address")
-                    dest_ip = target.get("current_ip")
-                    dest = dest_mac or dest_ip
-                    ok, sent, send_duration, send_ts_start, send_ts_end = self._push_model(dest)
+                    dest_ip  = target.get("current_ip")
+                    # ✅ FIX BUG 6 : on passe dest_mac ET dest_ip séparément
+                    # pour que le manager puisse résoudre le destinataire soit
+                    # via _ip_to_mac (quand c'est une IP), soit directement
+                    # dans self._volunteers (quand c'est un MAC).
+                    # Avant : dest = dest_mac or dest_ip était envoyé comme
+                    # champ dest_ip → si c'était un MAC, le manager ne le
+                    # trouvait jamais via sa table IP → destinataire inconnu.
+                    ok, sent, send_duration, send_ts_start, send_ts_end = self._push_model(
+                        dest_mac=dest_mac, dest_ip=dest_ip
+                    )
                     if ok:
                         bytes_sent += sent
                         sent_details.append({
@@ -354,8 +362,14 @@ class Volunteer:
         for attempt in range(MAX_RETRIES):
             try:
                 conn = self._connect_manager()
+                # ✅ FIX BUG 5 : envoyer aussi volunteer_mac pour que le manager
+                # puisse identifier et exclure ce volontaire de sa propre liste.
+                # Sans ça, le manager inclut le demandeur → XOR(soi,soi)=0 → se
+                # choisit lui-même comme voisin → aucun échange réel.
                 send_message(conn, MSG_REQUEST_NEIGHBORS,
-                             {"volunteer_ip": self.my_ip, "k": K_NEIGHBORS})
+                             {"volunteer_ip": self.my_ip,
+                              "volunteer_mac": self.mac_address,
+                              "k": K_NEIGHBORS})
                 msg_type, data, _ = receive_message(conn)
                 conn.close()
                 if msg_type == MSG_NEIGHBORS_RESPONSE:
@@ -444,8 +458,19 @@ class Volunteer:
         )
         return neighbors_info
 
-    def _push_model(self, dest_ip: str):
-        """Compresse et envoie le modèle au Manager à destination de dest_ip."""
+    def _push_model(self, dest_mac: str = None, dest_ip: str = None):
+        """Compresse et envoie le modèle au Manager à destination de dest_mac / dest_ip.
+
+        FIX BUG 6 : l'ancienne signature n'acceptait qu'un seul paramètre `dest_ip`
+        mais l'appelant lui passait parfois dest_mac (via `dest = dest_mac or dest_ip`).
+        Le manager cherchait ce champ dans _ip_to_mac et current_ip → introuvable
+        si c'était un MAC → "Destinataire inconnu" → aucun modèle livré.
+
+        Correction : on envoie les deux champs. Le manager essaie d'abord dest_mac
+        (lookup direct dans self._volunteers), puis dest_ip (via _ip_to_mac).
+        """
+        # Choisir le meilleur identifiant pour les logs
+        dest_label = dest_mac or dest_ip or "?"
         try:
             compressed, meta = compress_model(
                 self.model, COMPRESSION,
@@ -453,15 +478,23 @@ class Volunteer:
             )
 
             conn = self._connect_manager()
-            # Timestamp de début d'envoi à partager avec le destinataire via le manager
             send_ts_start = time.time()
-            # Enrichir meta avant envoi (manager stockera ces métadonnées)
             meta.update({
                 "payload_bytes": len(compressed),
                 "send_ts_start": send_ts_start,
             })
+            # ✅ FIX : envoyer dest_mac ET dest_ip pour que le manager
+            # puisse résoudre le destinataire quel que soit le format.
+            # Le manager consulte d'abord dest_mac (clé directe dans _volunteers),
+            # puis dest_ip (via _ip_to_mac), puis scan des current_ip.
             send_message(conn, MSG_SEND_MODEL,
-                         {"sender_ip": self.my_ip, "dest_ip": dest_ip, "metadata": meta},
+                         {
+                             "sender_ip":  self.my_ip,
+                             "sender_mac": self.mac_address,
+                             "dest_ip":    dest_ip or "",
+                             "dest_mac":   dest_mac or "",
+                             "metadata":   meta,
+                         },
                          compressed)
             msg_type, rsp, _ = receive_message(conn)
             send_ts_end = time.time()
@@ -473,13 +506,13 @@ class Volunteer:
             if msg_type == MSG_ACK:
                 ratio = compression_ratio(self._model_bytes, len(compressed))
                 logging.info(
-                    f"Modèle envoyé → {dest_ip}  "
+                    f"Modèle envoyé → {dest_label}  "
                     f"({len(compressed)/1024:.1f} KB, ratio={ratio:.1f}x)"
                 )
                 return True, len(compressed), send_duration, send_ts_start, send_ts_end
             logging.warning(f"Push refusé par manager : {rsp}")
         except Exception as exc:
-            logging.warning(f"Push vers {dest_ip} échoué : {exc}")
+            logging.warning(f"Push vers {dest_label} échoué : {exc}")
         return False, 0, 0.0, 0.0, 0.0
 
     def _pull_models(self):
@@ -493,7 +526,11 @@ class Volunteer:
             try:
                 conn = self._connect_manager()
                 send_message(conn, MSG_POLL_MODELS,
-                             {"volunteer_ip": self.my_ip, "max_models": 5})
+                             {
+                                 "volunteer_ip":  self.my_ip,
+                                 "volunteer_mac": self.mac_address,  # ✅ FIX BUG 4 bis
+                                 "max_models":    5,
+                             })
                 msg_type, data, payload = receive_message(conn)
                 conn.close()
 

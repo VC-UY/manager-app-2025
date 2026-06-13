@@ -331,7 +331,7 @@ python volunteer.py \
     --coordinator 192.168.1.10 \
     --manager     192.168.1.11 \
     --my-ip       192.168.1.20 \
-    > logs/volunteer_0.log 2>&1 &
+    > logs/volunteer_1.log 2>&1 &
 
 # Répéter pour les volontaires 1, 2, 3, 4 (--id 1, 2, 3, 4)
 ```

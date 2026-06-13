@@ -56,12 +56,12 @@ logging.basicConfig(
 
 class Manager:
     def __init__(self):
-        self._volunteers: Dict[str, VolunteerNode] = {}  # VolunteerNode
+        self._volunteers: Dict[str, VolunteerNode] = {}  # mac → VolunteerNode
         self._vol_lock  = threading.Lock()
-        
+
         # Mapping IP courant → MAC (pour supporter les changements d'IP)
         self._ip_to_mac: Dict[str, str] = {}
-        
+
         # file par MAC destinataire : Queue[(sender_mac, payload_bytes, metadata_dict)]
         self._queues: Dict[str, queue.Queue] = defaultdict(queue.Queue)
         self._q_lock = threading.Lock()
@@ -173,65 +173,104 @@ class Manager:
     # ─── Handlers ─────────────────────────────────────────────────────────────
 
     def _on_volunteer_list(self, data: dict):
-        """Met à jour la liste des volontaires (message du coordinateur)."""
+        """Met à jour la liste des volontaires (message du coordinateur).
+
+        FIX BUG 2 : L'ancienne implémentation faisait clear() + reconstruction complète
+        à chaque broadcast (toutes les 5s). Si un volontaire demandait ses voisins
+        exactement pendant ce clear, il recevait une liste vide → aucun échange.
+
+        Correction : mise à jour DIFFÉRENTIELLE.
+        - On ajoute / met à jour les volontaires présents dans le nouveau broadcast.
+        - On supprime uniquement ceux qui n'y figurent plus (réellement partis).
+        - Les données existantes ne sont jamais effacées brutalement.
+        """
         new_list = data.get("volunteers", [])
+        new_macs = set()
+
         with self._vol_lock:
-            self._volunteers.clear()
-            self._ip_to_mac.clear()
-            
             for vol_data in new_list:
                 try:
                     node = VolunteerNode.from_dict(vol_data)
                     mac = node.mac_address
-                    self._volunteers[mac] = node
-                    
+                    new_macs.add(mac)
+
+                    if mac not in self._volunteers:
+                        # Nouveau volontaire
+                        self._volunteers[mac] = node
+                        logging.info(
+                            f"Volontaire ajouté : MAC={mac}  IP={node.current_ip}  "
+                            f"CPU={node.resources.cpu_cores} cores  "
+                            f"RAM={node.resources.ram_gb}GB  "
+                            f"Network={node.resources.network_bandwidth_mbps}Mbps"
+                        )
+                    else:
+                        # Mise à jour des ressources et de l'IP uniquement
+                        existing = self._volunteers[mac]
+                        existing.resources  = node.resources
+                        existing.current_ip = node.current_ip
+                        logging.debug(f"Volontaire mis à jour : MAC={mac}  IP={node.current_ip}")
+
                     # Maintenir le mapping IP → MAC
                     if node.current_ip:
                         self._ip_to_mac[node.current_ip] = mac
-                    
-                    logging.info(
-                        f"Volontaire mis à jour: MAC={mac}  IP={node.current_ip}  "
-                        f"CPU={node.resources.cpu_cores} cores  "
-                        f"RAM={node.resources.ram_gb}GB  "
-                        f"Network={node.resources.network_bandwidth_mbps}Mbps"
-                    )
+
                 except Exception as e:
                     logging.error(f"Erreur parsing volontaire : {e}")
-        
-        logging.info(f"Liste volontaires mise à jour : {len(self._volunteers)} volontaires")
+
+            # Retirer les volontaires absents du dernier broadcast
+            departed = [mac for mac in list(self._volunteers.keys())
+                        if mac not in new_macs]
+            for mac in departed:
+                gone_node = self._volunteers.pop(mac)
+                if gone_node.current_ip and gone_node.current_ip in self._ip_to_mac:
+                    del self._ip_to_mac[gone_node.current_ip]
+                logging.info(f"Volontaire retiré (absent du broadcast) : {mac}")
+
+        logging.info(f"Liste volontaires synchronisée : {len(self._volunteers)} volontaires actifs")
 
     def _on_send_model(self, conn: socket.socket,
                        sender_ip: str, data: dict, payload: bytes):
-        """Enfile le modèle pour le destinataire."""
-        dest_ip  = data.get("dest_ip", "")
-        metadata = data.get("metadata", {})
+        """Enfile le modèle pour le destinataire.
+
+        FIX BUG 6 (côté manager) : le volontaire envoie maintenant dest_mac ET dest_ip.
+        On tente la résolution dans cet ordre :
+          1. dest_mac direct (clé dans self._volunteers) — le plus fiable
+          2. dest_ip via _ip_to_mac
+          3. Scan des current_ip (fallback)
+        Idem pour le sender : on préfère sender_mac transmis dans data.
+        """
+        dest_ip   = data.get("dest_ip", "")
+        dest_mac_hint = data.get("dest_mac", "")     # ✅ nouveau champ
+        sender_mac_hint = data.get("sender_mac", "") # ✅ nouveau champ
+        metadata  = data.get("metadata", {})
 
         with self._vol_lock:
-            # Obtenir le MAC du destinataire
             known_macs = list(self._volunteers.keys())
-            
-            # Si dest_ip est une IP, chercher son MAC
+
+            # ✅ Résoudre le MAC du destinataire — priorité au MAC explicite
             dest_mac = None
-            if dest_ip in self._ip_to_mac:
+            if dest_mac_hint and dest_mac_hint in self._volunteers:
+                dest_mac = dest_mac_hint
+            elif dest_ip in self._ip_to_mac:
                 dest_mac = self._ip_to_mac[dest_ip]
             elif dest_ip in self._volunteers:
-                # C'est peut-être un MAC directement
                 dest_mac = dest_ip
             else:
-                # Chercher en comparant les IPs
                 for mac, node in self._volunteers.items():
                     if node.current_ip == dest_ip:
                         dest_mac = mac
                         break
-            
+
             if not dest_mac or dest_mac not in known_macs:
                 send_message(conn, MSG_ERROR,
-                             {"message": f"Destinataire inconnu : {dest_ip}"})
+                             {"message": f"Destinataire inconnu : {dest_mac_hint or dest_ip}"})
                 return
-            
-            # Également résoudre l'IP du sender
+
+            # ✅ Résoudre le sender — priorité au MAC explicite
             sender_mac = None
-            if sender_ip in self._ip_to_mac:
+            if sender_mac_hint and sender_mac_hint in self._volunteers:
+                sender_mac = sender_mac_hint
+            elif sender_ip in self._ip_to_mac:
                 sender_mac = self._ip_to_mac[sender_ip]
             elif sender_ip in self._volunteers:
                 sender_mac = sender_ip
@@ -240,11 +279,10 @@ class Manager:
                     if node.current_ip == sender_ip:
                         sender_mac = mac
                         break
-            
-            if not sender_mac:
-                sender_mac = sender_ip  # Utiliser l'IP comme fallback
 
-        # Conserver une copie des métadonnées et ajouter le timestamp de queue
+            if not sender_mac:
+                sender_mac = sender_ip  # fallback sur l'IP brute
+
         metadata = dict(metadata or {})
         metadata["_queued_ts"] = time.time()
         with self._q_lock:
@@ -258,23 +296,32 @@ class Manager:
         )
 
     def _on_poll(self, conn: socket.socket, vol_ip: str, data: dict):
-        """Livre les modèles en attente pour vol_ip.
-        Supporte à la fois les IP et les MAC.
+        """Livre les modèles en attente.
+
+        FIX BUG 4 : La résolution du MAC était fragile après un clear().
+        On utilise maintenant _resolve_mac() qui couvre tous les cas
+        (MAC direct, IP dans ip_to_mac, scan des nodes) de façon cohérente.
+        On garde en plus vol_ip comme dernier recours.
         """
-        # Obtenir le MAC du volontaire
-        vol_mac = data.get("volunteer_mac") or data.get("volunteer_ip", vol_ip)
-        
+        # Priorité : MAC explicite fourni par le volontaire > IP déclarée > IP TCP
+        candidate = (
+            data.get("volunteer_mac")
+            or data.get("volunteer_ip")
+            or vol_ip
+        )
+
         with self._vol_lock:
-            # Si c'est une IP, chercher le MAC correspondant
-            if vol_mac in self._ip_to_mac:
-                vol_mac = self._ip_to_mac[vol_mac]
-            elif vol_mac not in self._volunteers:
-                # Chercher en comparant les IPs
-                for mac, node in self._volunteers.items():
-                    if node.current_ip == vol_mac or node.current_ip == vol_ip:
-                        vol_mac = mac
-                        break
-        
+            vol_mac = self._resolve_mac(candidate)
+            # Dernier recours : essayer directement avec l'IP TCP de connexion
+            if vol_mac is None and candidate != vol_ip:
+                vol_mac = self._resolve_mac(vol_ip)
+
+        if vol_mac is None:
+            # Aucune résolution possible : répondre vide plutôt que planter
+            logging.warning(f"_on_poll : impossible de résoudre {candidate} / {vol_ip}")
+            send_message(conn, MSG_ACK, {"status": "empty"})
+            return
+
         max_deliver = data.get("max_models", 5)
         items = []
 
@@ -287,11 +334,9 @@ class Manager:
             send_message(conn, MSG_ACK, {"status": "empty"})
             return
 
-        # Livraison du premier
         sender, payload, meta = items[0]
         remaining = len(items) - 1
 
-        # Remettre les extras dans la file
         if remaining > 0:
             with self._q_lock:
                 for item in items[1:]:
@@ -304,36 +349,52 @@ class Manager:
             f"Modèle livré : {sender} → {vol_mac}  "
             f"({len(payload)/1024:.1f} KB)  restants={remaining}"
         )
-        # Enregistrer la livraison avec métadonnées et timestamp côté manager
         try:
             recv_ts = time.time()
             payload_bytes = len(payload) if payload else 0
-            self._stats.record_exchange(sender, vol_mac, payload_bytes, metadata=meta, delivered_ts=recv_ts)
+            self._stats.record_exchange(sender, vol_mac, payload_bytes,
+                                        metadata=meta, delivered_ts=recv_ts)
         except Exception as e:
             logging.debug(f"Enregistrement échange échoué: {e}")
 
     def _on_neighbors_request(self, conn: socket.socket,
                                vol_ip: str, data: dict):
-        """Retourne la liste complète de tous les volontaires avec leur historique de bande passante.
-        La détermination du voisinage XOR et le score UCB sont délégués au volontaire lui-même.
+        """Retourne la liste de TOUS les autres volontaires avec leur historique
+        de bande passante, en excluant le demandeur.
+
+        FIX BUG 3 : L'ancienne implémentation incluait le demandeur dans la liste
+        renvoyée. Le volontaire calculait alors XOR(soi-même, soi-même) = 0, ce qui
+        faisait de lui-même son voisin le plus proche → aucun échange réel.
+
+        On identifie le MAC du demandeur et on l'exclut de la réponse.
+        Si on ne peut pas l'identifier (premier contact), on renvoie tout
+        et laisse le volontaire filtrer lui-même via son propre MAC.
         """
+        # Identifier le demandeur
+        requester_mac_hint = data.get("volunteer_mac") or data.get("volunteer_ip")
         with self._vol_lock:
+            requester_mac = (
+                self._resolve_mac(requester_mac_hint) if requester_mac_hint else None
+            ) or self._resolve_mac(vol_ip)
+
             vol_list = []
             for mac, node in self._volunteers.items():
+                # ✅ FIX : exclure le demandeur pour éviter XOR = 0
+                if mac == requester_mac:
+                    continue
                 node_dict = node.to_dict()
                 node_dict["bandwidth_history"] = list(self._neighbor_rewards[mac])
                 vol_list.append(node_dict)
 
         send_message(conn, MSG_NEIGHBORS_RESPONSE, {"volunteers": vol_list})
         logging.info(
-            f"[Demande voisins] Réponse au volontaire {vol_ip} : "
-            f"{len(vol_list)} volontaires au total "
-            f"(incluant le demandeur pour que XOR calcule tous les voisins possibles)"
+            f"[Demande voisins] Réponse à {requester_mac or vol_ip} : "
+            f"{len(vol_list)} voisins potentiels (demandeur exclu)"
         )
 
     def _on_stats_push(self, data: dict):
         """Enregistre le résumé de stats poussé par un volontaire."""
-        vol_ip = data.get("volunteer_ip", "unknown")
+        vol_ip  = data.get("volunteer_ip", "unknown")
         summary = data.get("summary", {})
         if summary:
             with self._vol_lock:

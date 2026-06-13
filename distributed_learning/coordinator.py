@@ -102,11 +102,12 @@ class Coordinator:
 
     def _handle_volunteer(self, conn: socket.socket, ip: str):
         # Le volontaire déclare son MAC et ses ressources dans le heartbeat initial
+        # FIX BUG 1 : mac_address doit être mis à jour dès le premier heartbeat valide.
+        # Dans la version originale, `mac_address` restait None car on utilisait
+        # la variable locale `mac` dans la boucle sans jamais assigner mac_address.
+        # Résultat : le bloc `finally` ne retirait JAMAIS le volontaire du dictionnaire.
         mac_address = None
         node = None
-
-        with self._lock:
-            current_count = len(self._volunteers)
 
         try:
             while self._running:
@@ -114,11 +115,15 @@ class Coordinator:
 
                 if msg_type == MSG_HEARTBEAT:
                     mac = data.get("mac_address", "")
-                    
+
                     if not mac:
                         logging.warning(f"Heartbeat sans MAC depuis {ip}, ignoré")
                         continue
-                    
+
+                    # ✅ FIX : assigner mac_address dès qu'on a un MAC valide
+                    if mac_address is None:
+                        mac_address = mac
+
                     # Créer ou mettre à jour le volontaire
                     with self._lock:
                         if mac not in self._volunteers:
@@ -137,6 +142,7 @@ class Coordinator:
                                 )
                             except Exception as e:
                                 logging.error(f"Impossible de parser volontaire {mac}: {e}")
+                                mac_address = None  # annuler si parsing échoue
                                 continue
                         else:
                             # Mise à jour du volontaire existant
@@ -148,31 +154,30 @@ class Coordinator:
                                 logging.debug(f"Ressources mises à jour pour {mac}")
                             except Exception as e:
                                 logging.warning(f"Erreur mise à jour ressources {mac}: {e}")
-                        
+
                         node.last_heartbeat = time.time()
-                    
+
                     send_message(conn, MSG_ACK, {"ts": time.time(), "mac": mac})
 
                 elif msg_type == MSG_DISCONNECT:
                     break
 
         except (ConnectionError, OSError, EOFError) as exc:
-            if mac_address:
-                logging.info(f"Volontaire {mac_address} déconnecté : {exc}")
-            else:
-                logging.info(f"Volontaire {ip} déconnecté : {exc}")
+            logging.info(f"Volontaire {mac_address or ip} déconnecté : {exc}")
         except Exception as exc:
-            if mac_address:
-                logging.warning(f"Erreur volontaire {mac_address} : {exc}")
-            else:
-                logging.warning(f"Erreur volontaire {ip} : {exc}")
+            logging.warning(f"Erreur volontaire {mac_address or ip} : {exc}")
         finally:
+            # ✅ FIX : mac_address est maintenant correctement assigné,
+            # donc le volontaire sera bien retiré du dictionnaire à la déconnexion.
             if mac_address:
                 with self._lock:
                     self._volunteers.pop(mac_address, None)
-                logging.info(f"Volontaire retiré : {mac_address}  (total : {len(self._volunteers)})")
+                logging.info(
+                    f"Volontaire retiré : {mac_address}  "
+                    f"(total : {len(self._volunteers)})"
+                )
             else:
-                logging.info(f"Volontaire déconnecté {ip}")
+                logging.info(f"Volontaire déconnecté {ip} (aucun MAC enregistré)")
             conn.close()
 
     # ─── Nettoyage ────────────────────────────────────────────────────────────
@@ -194,7 +199,6 @@ class Coordinator:
         while self._running:
             time.sleep(5)
             with self._lock:
-                # Envoyer les volontaires serialisés (avec MAC et ressources)
                 vol_list = [node.to_dict() for node in self._volunteers.values()]
             if not vol_list:
                 continue
