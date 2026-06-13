@@ -15,16 +15,20 @@
 
 services:
   volunteer:
-    # ── Image on Docker Hub (public, free) ──────────────────────────────
+    # Image on Docker Hub (public, free)
     # Replace <your-dockerhub-username> with your actual Docker Hub username.
     image: pablo93230/distributed-learning-volunteer:latest
 
-    # ── Build from local Dockerfile (fallback if image not available) ───
+    # Build from local Dockerfile (fallback if image not available)
     build:
       context: .
       dockerfile: Dockerfile
 
-    # ── Environment ─────────────────────────────────────────────────────
+    # Fichier d'environnement
+    env_file:
+      - .env
+
+    # Environment
     environment:
       # REQUIRED
       - VOLUNTEER_ID=${VOLUNTEER_ID:-0}
@@ -55,17 +59,18 @@ services:
       - RAM_GB=${RAM_GB:-}
       - NETWORK_MBPS=${NETWORK_MBPS:-}
 
-    # ── Volumes ─────────────────────────────────────────────────────────
+    # Volumes
     # Persist results outside the container
     volumes:
       - ./results:/app/results
 
-    # ── Network ─────────────────────────────────────────────────────────
+    # Network
     # Use host network so the volunteer can reach coordinator/manager
     # and they can reach it by its real IP.
     network_mode: host
 
-    restart: unless-stopped
+    # Disable auto-restart so container stops when training rounds limit is reached
+    restart: "no"
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
 

@@ -85,7 +85,13 @@ class Volunteer:
         self.my_ip           = my_ip or self._detect_ip(coordinator_host)
         
         # Obtenir MAC et ressources
-        self.mac_address     = get_mac_address(coordinator_host)
+        base_mac = get_mac_address(coordinator_host)
+        parts = base_mac.split(":")
+        if len(parts) == 6:
+            parts[-1] = f"{self.vol_id:02X}"
+            self.mac_address = ":".join(parts)
+        else:
+            self.mac_address = f"{base_mac}_{self.vol_id}"
         self.resources       = get_resource_info(
             cpu_cores=cpu_cores,
             ram_gb=ram_gb,
@@ -582,6 +588,7 @@ class Volunteer:
             compact = {
                 "current_round":          self._current_round,
                 "total_rounds":           len(rounds),
+                "max_rounds":             self.max_rounds,
                 "best_test_acc":          max(r.test_acc for r in rounds),
                 "final_test_acc":         rounds[-1].test_acc,
                 "total_bytes_sent":       self._stats._total_sent,

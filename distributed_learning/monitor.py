@@ -81,7 +81,8 @@ def display(stats: dict, refresh: int, host: str, port: int):
         for ip, vs in sorted(summaries.items()):
             acc     = vs.get("best_test_acc", vs.get("final_test_acc", 0))
             current = vs.get("current_round", vs.get("total_rounds", 0))
-            total   = vs.get("total_rounds", vs.get("current_round", 0))
+            max_r   = vs.get("max_rounds", 0)
+            total   = max_r if max_r > 0 else vs.get("total_rounds", vs.get("current_round", 0))
             rounds_str = f"{current}/{total}"
             bw_kb   = vs.get("total_bytes_sent", 0) / 1024
             dur_s   = vs.get("total_train_duration_s", 0)

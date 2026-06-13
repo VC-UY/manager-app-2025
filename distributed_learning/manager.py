@@ -137,7 +137,7 @@ class Manager:
                 self._on_stats_request(conn)
 
             elif msg_type == MSG_STATS_PUSH:
-                self._on_stats_push(data)
+                self._on_stats_push(addr, data)
                 send_message(conn, MSG_ACK, {"status": "stats_received"})
 
             else:
@@ -392,13 +392,19 @@ class Manager:
             f"{len(vol_list)} voisins potentiels (demandeur exclu)"
         )
 
-    def _on_stats_push(self, data: dict):
+    def _on_stats_push(self, sender_ip: str, data: dict):
         """Enregistre le résumé de stats poussé par un volontaire."""
         vol_ip  = data.get("volunteer_ip", "unknown")
         summary = data.get("summary", {})
         if summary:
             with self._vol_lock:
                 vol_mac = self._resolve_mac(vol_ip)
+                if vol_mac is None:
+                    vol_mac = self._resolve_mac(sender_ip)
+                
+                node = self._volunteers.get(vol_mac) if vol_mac else None
+                real_ip = node.current_ip if node else (sender_ip or vol_ip)
+
             if vol_mac:
                 current_summary = dict(summary)
                 current_summary["_last_update"] = time.time()
@@ -407,10 +413,10 @@ class Manager:
                 self._neighbor_stats_prev[vol_mac] = current_summary
                 logging.debug(
                     f"Reward mis à jour pour {vol_mac}: {reward:.2f} Mbps "
-                    f"(stats push de {vol_ip})"
+                    f"(stats push de {sender_ip})"
                 )
-            self._stats.update_volunteer_summary(vol_ip, summary)
-            logging.debug(f"Stats reçues de {vol_ip} (round {summary.get('current_round', '?')})")
+            self._stats.update_volunteer_summary(real_ip, summary)
+            logging.debug(f"Stats reçues de {real_ip} (round {summary.get('current_round', '?')})")
 
     def _on_stats_request(self, conn: socket.socket):
         """Répond avec le résumé global des stats."""
