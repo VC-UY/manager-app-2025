@@ -37,6 +37,15 @@ class RoundStats:
     round_duration_s:   float = 0.0
     best_test_acc_so_far: float = 0.0
     best_test_acc_ts:   float = 0.0
+    # New profiling fields (System & Model Profilers)
+    cpu_percent_peak:   float = 0.0
+    cpu_percent_mean:   float = 0.0
+    ram_usage_gb_peak:  float = 0.0
+    ram_usage_gb_mean:  float = 0.0
+    battery_level:      float = 100.0
+    energy_used_joules: float = 0.0
+    gradient_size_mb:   float = 0.0
+    batch_time_avg_s:   float = 0.0
 
 
 class StatsTracker:

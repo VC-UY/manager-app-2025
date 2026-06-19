@@ -10,15 +10,15 @@ import logging
 # =============================================================================
 # RÉSEAU — COORDINATEUR
 # =============================================================================
-COORDINATOR_HOST = os.getenv("COORDINATOR_HOST", "0.0.0.0")
+COORDINATOR_HOST = os.getenv("COORDINATOR_HOST", "192.168.1.106")
 COORDINATOR_PORT = int(os.getenv("COORDINATOR_PORT", "9000"))
 
 # =============================================================================
 # RÉSEAU — MANAGER
 # =============================================================================
-MANAGER_HOST = os.getenv("MANAGER_HOST", "0.0.0.0")
+MANAGER_HOST = os.getenv("MANAGER_HOST", "192.168.1.106")
 MANAGER_PORT = int(os.getenv("MANAGER_PORT", "9001"))
-MANAGER_EXTERNAL_HOST = os.getenv("MANAGER_EXTERNAL_HOST", "127.0.0.1")
+MANAGER_EXTERNAL_HOST = os.getenv("MANAGER_EXTERNAL_HOST", "192.168.1.106")
 
 # =============================================================================
 # TOPOLOGIE — VOISINAGE

@@ -36,6 +36,9 @@ from src.config import (
     MAX_CONNECTIONS, MAX_RETRIES, RETRY_DELAY,
     STATS_PRINT_INTERVAL, LOG_LEVEL, STATS_DIR,
     SW_UCB_WINDOW, SW_UCB_CONFIDENCE,
+    DATASET, NUM_CLASSES, BATCH_SIZE, COMPRESSION,
+    QUANTIZATION_BITS, SPARSIFICATION_RATIO,
+    GOSSIP_INTERVAL, GOSSIP_FANOUT,
 )
 from src.protocol import (
     send_message, receive_message,
@@ -71,9 +74,33 @@ class Manager:
             lambda: deque(maxlen=SW_UCB_WINDOW)
         )
         self._neighbor_stats_prev: Dict[str, dict] = {}
+        # Estimation des besoins du modèle (ModelProfiler) côté Manager
+        try:
+            import torch
+            from src.model import create_model
+            from src.profiler import ModelProfiler
+            m = create_model(DATASET, NUM_CLASSES).to("cpu")
+            prof = ModelProfiler(m)
+            est = prof.estimate_needs(
+                dataset_name=DATASET,
+                batch_size=BATCH_SIZE,
+                optimizer_type="sgd",
+                compression_type=COMPRESSION,
+                quantization_bits=QUANTIZATION_BITS,
+                sparsification_ratio=SPARSIFICATION_RATIO,
+                gossip_interval=GOSSIP_INTERVAL,
+                fanout=GOSSIP_FANOUT,
+                network_bandwidth_mbps=1000.0
+            )
+            self._ram_needed = est["ram_needed"]
+            logging.info(f"Besoins estimés du modèle '{DATASET}' : RAM nécessaire = {self._ram_needed} GB")
+        except Exception as e:
+            logging.warning(f"Impossible d'estimer les besoins du modèle : {e}. Utilisation d'une valeur par défaut (0.5 Go).")
+            self._ram_needed = 0.5
+
         self._running = True
 
-    # ─── Entrée principale ────────────────────────────────────────────────────
+    #Entrée principale
 
     def run(self):
         signal.signal(signal.SIGINT,  self._shutdown)
@@ -91,7 +118,7 @@ class Manager:
         while self._running:
             time.sleep(1)
 
-    # ─── Serveur TCP ──────────────────────────────────────────────────────────
+    #Serveur TCP
 
     def _listen(self):
         srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -170,7 +197,7 @@ class Manager:
                 return (delta_bytes * 8) / elapsed / 1_000_000
         return node.resources.network_bandwidth_mbps if node is not None else 0.0
 
-    # ─── Handlers ─────────────────────────────────────────────────────────────
+    #Handlers
 
     def _on_volunteer_list(self, data: dict):
         """Met à jour la liste des volontaires (message du coordinateur).
@@ -195,7 +222,13 @@ class Manager:
                     new_macs.add(mac)
 
                     if mac not in self._volunteers:
-                        # Nouveau volontaire
+                        # Nouveau volontaire - vérifier ses ressources
+                        if node.resources.ram_gb < self._ram_needed:
+                            logging.warning(
+                                f"[REFUS] Volontaire MAC={mac} rejeté (RAM disponible = {node.resources.ram_gb} GB < requise = {self._ram_needed:.2f} GB)"
+                            )
+                            continue
+                        
                         self._volunteers[mac] = node
                         logging.info(
                             f"Volontaire ajouté : MAC={mac}  IP={node.current_ip}  "
@@ -204,7 +237,16 @@ class Manager:
                             f"Network={node.resources.network_bandwidth_mbps}Mbps"
                         )
                     else:
-                        # Mise à jour des ressources et de l'IP uniquement
+                        # Pour un volontaire existant, on vérifie s'il respecte toujours les exigences de RAM
+                        if node.resources.ram_gb < self._ram_needed:
+                            logging.warning(
+                                f"[REFUS] Volontaire MAC={mac} rejeté après mise à jour (RAM disponible = {node.resources.ram_gb} GB < requise = {self._ram_needed:.2f} GB)"
+                            )
+                            self._volunteers.pop(mac, None)
+                            if node.current_ip in self._ip_to_mac:
+                                del self._ip_to_mac[node.current_ip]
+                            continue
+
                         existing = self._volunteers[mac]
                         existing.resources  = node.resources
                         existing.current_ip = node.current_ip
@@ -240,14 +282,14 @@ class Manager:
         Idem pour le sender : on préfère sender_mac transmis dans data.
         """
         dest_ip   = data.get("dest_ip", "")
-        dest_mac_hint = data.get("dest_mac", "")     # ✅ nouveau champ
-        sender_mac_hint = data.get("sender_mac", "") # ✅ nouveau champ
+        dest_mac_hint = data.get("dest_mac", "")
+        sender_mac_hint = data.get("sender_mac", "")
         metadata  = data.get("metadata", {})
 
         with self._vol_lock:
             known_macs = list(self._volunteers.keys())
 
-            # ✅ Résoudre le MAC du destinataire — priorité au MAC explicite
+            #Résoudre le MAC du destinataire — priorité au MAC explicite
             dest_mac = None
             if dest_mac_hint and dest_mac_hint in self._volunteers:
                 dest_mac = dest_mac_hint
@@ -266,7 +308,7 @@ class Manager:
                              {"message": f"Destinataire inconnu : {dest_mac_hint or dest_ip}"})
                 return
 
-            # ✅ Résoudre le sender — priorité au MAC explicite
+            #Résoudre le sender — priorité au MAC explicite
             sender_mac = None
             if sender_mac_hint and sender_mac_hint in self._volunteers:
                 sender_mac = sender_mac_hint
@@ -379,7 +421,7 @@ class Manager:
 
             vol_list = []
             for mac, node in self._volunteers.items():
-                # ✅ FIX : exclure le demandeur pour éviter XOR = 0
+                #FIX : exclure le demandeur pour éviter XOR = 0
                 if mac == requester_mac:
                     continue
                 node_dict = node.to_dict()
@@ -422,14 +464,14 @@ class Manager:
         """Répond avec le résumé global des stats."""
         send_message(conn, MSG_STATS_RESPONSE, self._stats.summary())
 
-    # ─── Reporter périodique ──────────────────────────────────────────────────
+    #Reporter périodique
 
     def _stats_reporter(self):
         while self._running:
             time.sleep(STATS_PRINT_INTERVAL)
             self._stats.print_summary()
 
-    # ─── Arrêt ────────────────────────────────────────────────────────────────
+    #Arrêt
 
     def _shutdown(self, *_):
         logging.info("Arrêt du manager…")

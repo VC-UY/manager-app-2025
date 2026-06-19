@@ -5,7 +5,7 @@ Nœud Volontaire
 Rôle :
   1. Se connecte au Coordinateur (heartbeat TCP persistant).
   2. Entraîne un modèle local sur sa partition de données.
-  3. Interroge le Manager pour obtenir ses voisins XOR.
+  3. Interroge le Manager pour obtenir les volontaires actifs.
   4. Envoie son modèle compressé à ses voisins via le Manager (gossip push).
   5. Poll le Manager pour récupérer les modèles envoyés par ses pairs.
   6. Agrège les modèles reçus (FedAvg).
@@ -59,7 +59,9 @@ from src.dataset import load_dataset
 from src.compression import compress_model, decompress_model, average_models, compression_ratio
 from src.stats import StatsTracker
 from src.volunteer_node import VolunteerNode, get_mac_address, get_resource_info
-from src.topology import get_k_nearest_neighbors
+from src.peer_sampling import get_peer_sample
+from src.profiler import SystemProfiler, ModelProfiler
+import psutil
 
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL, logging.INFO),
@@ -104,6 +106,33 @@ class Volunteer:
         self.optimizer = optim.SGD(self.model.parameters(),
                                    lr=LEARNING_RATE, momentum=0.9, weight_decay=1e-4)
         self.criterion = nn.CrossEntropyLoss()
+
+        # Initialisation des profileurs et pré-check
+        self.system_profiler = SystemProfiler()
+        self.model_profiler = ModelProfiler(self.model)
+        
+        logging.info("--- Exécution du System Profiler & Model Profiler (Pré-check) ---")
+        sys_avail = self.system_profiler.get_available_resources(self.resources.network_bandwidth_mbps)
+        model_est = self.model_profiler.estimate_needs(
+            dataset_name=DATASET,
+            batch_size=BATCH_SIZE,
+            optimizer_type="sgd",
+            compression_type=COMPRESSION,
+            quantization_bits=QUANTIZATION_BITS,
+            sparsification_ratio=SPARSIFICATION_RATIO,
+            gossip_interval=GOSSIP_INTERVAL,
+            fanout=GOSSIP_FANOUT,
+            network_bandwidth_mbps=self.resources.network_bandwidth_mbps
+        )
+        
+        logging.info(f"System Profiler (Disponible) : RAM={sys_avail['ram_free']}GB, CPU_Load={sys_avail['cpu_load']}%, Battery={sys_avail['battery']}%")
+        logging.info(f"Model Profiler (Requis)     : RAM_est={model_est['ram_needed']}GB, Gradients={model_est['gradient_size']}MB, Epoch_Time_est={model_est['epoch_time_estimate']}s")
+        
+        if sys_avail["ram_free"] < model_est["ram_needed"]:
+            logging.error(f"[REFUS LOCAL] Ressources RAM insuffisantes : Disponible={sys_avail['ram_free']}GB < Requise={model_est['ram_needed']}GB")
+            sys.exit(1)
+        else:
+            logging.info("[ACCEPTATION LOCALE] Ressources suffisantes détectées.")
 
         # Données
         self.train_loader, self.test_loader = load_dataset(
@@ -217,10 +246,12 @@ class Volunteer:
             neighbors = self._fetch_neighbors()
             with self._nb_lock:
                 self._neighbors = neighbors
-            logging.info(f"Voisins XOR : {neighbors}")
+            logging.info(f"Voisins échantillonnés (Peer Sampling) : {neighbors}")
 
             # 2. Entraînement local
+            self.system_profiler.start_monitoring()
             loss, tr_acc, duration = self._train()
+            sys_report = self.system_profiler.stop_monitoring()
 
             # 3. Push : envoi modèle aux voisins les plus prometteurs
             sent_details = []
@@ -282,6 +313,20 @@ class Volunteer:
                     best_acc = r.test_acc
                     best_ts = getattr(r, "timestamp", best_ts)
 
+            # Sauvegarder la dernière précision test pour le rapport final
+            self._last_test_acc = test_acc
+
+            # Métriques modèle temps réel du round
+            gradient_size_mb = self.model_profiler.param_bytes / (1024**2)
+            batch_time_avg_s = sum(self.model_profiler.batch_times[-len(self.train_loader):]) / max(len(self.train_loader), 1) if self.model_profiler.batch_times else 0.0
+
+            # Obtenir le niveau de batterie
+            try:
+                bat = psutil.sensors_battery()
+                battery_level = bat.percent if bat is not None else 100.0
+            except:
+                battery_level = 100.0
+
             self._stats.record(
                 round_num         = self._current_round,
                 train_loss        = loss,
@@ -300,6 +345,15 @@ class Volunteer:
                 round_duration_s  = round_duration,
                 best_test_acc_so_far = best_acc,
                 best_test_acc_ts  = best_ts,
+                # New profiling fields
+                cpu_percent_peak   = sys_report["cpu_peak"],
+                cpu_percent_mean   = sys_report["cpu_avg"],
+                ram_usage_gb_peak  = sys_report["ram_peak"],
+                ram_usage_gb_mean  = sum(self.system_profiler.ram_history) / max(len(self.system_profiler.ram_history), 1) if self.system_profiler.ram_history else 0.0,
+                battery_level      = battery_level,
+                energy_used_joules = sys_report["energy_used"],
+                gradient_size_mb   = gradient_size_mb,
+                batch_time_avg_s   = batch_time_avg_s,
             )
 
             # 9. Envoi des stats au manager pour monitoring centralisé
@@ -320,9 +374,14 @@ class Volunteer:
         self.model.train()
         t0 = time.time()
         total_loss, correct, total = 0.0, 0, 0
+        
+        self.model_profiler.start_training_tracking()
 
-        for _epoch in range(LOCAL_EPOCHS):
+        for epoch in range(LOCAL_EPOCHS):
+            t_epoch_start = time.time()
+            correct_epoch, total_epoch = 0, 0
             for X, y in self.train_loader:
+                t_batch_start = time.time()
                 X, y = X.to(self.device), y.to(self.device)
                 self.optimizer.zero_grad()
                 out  = self.model(X)
@@ -333,6 +392,16 @@ class Volunteer:
                 total_loss += loss.item()
                 correct    += out.argmax(1).eq(y).sum().item()
                 total      += len(y)
+                
+                correct_epoch += out.argmax(1).eq(y).sum().item()
+                total_epoch   += len(y)
+                
+                batch_duration = time.time() - t_batch_start
+                self.model_profiler.record_batch(batch_duration, loss.item())
+                
+            epoch_duration = time.time() - t_epoch_start
+            epoch_acc = correct_epoch / max(total_epoch, 1)
+            self.model_profiler.record_epoch(epoch_duration, epoch_acc)
 
         n_batches = len(self.train_loader) * LOCAL_EPOCHS
         avg_loss  = total_loss / max(n_batches, 1)
@@ -362,16 +431,14 @@ class Volunteer:
     # ─── Communication avec le Manager ────────────────────────────────────────
 
     def _fetch_neighbors(self) -> List[dict]:
-        """Demande la liste complète des volontaires au Manager et calcule localement
-        les k voisins les plus proches via XOR et les ordonne avec SW-UCB.
+        """Demande la liste complète des volontaires au Manager, effectue le Peer Sampling
+        pour choisir k voisins de manière aléatoire et les ordonne avec SW-UCB.
         """
         for attempt in range(MAX_RETRIES):
             try:
                 conn = self._connect_manager()
-                # ✅ FIX BUG 5 : envoyer aussi volunteer_mac pour que le manager
+                # envoyer aussi volunteer_mac pour que le manager
                 # puisse identifier et exclure ce volontaire de sa propre liste.
-                # Sans ça, le manager inclut le demandeur → XOR(soi,soi)=0 → se
-                # choisit lui-même comme voisin → aucun échange réel.
                 send_message(conn, MSG_REQUEST_NEIGHBORS,
                              {"volunteer_ip": self.my_ip,
                               "volunteer_mac": self.mac_address,
@@ -395,32 +462,32 @@ class Volunteer:
         return []
 
     def _compute_local_neighbors(self, volunteers_data: List[dict]) -> List[dict]:
-        """Calcule localement le voisinage XOR et trie par SW-UCB."""
+        """Effectue le Peer Sampling local et trie par SW-UCB."""
         my_mac = self.mac_address
         
         logging.debug(f"[Calcul voisins] Total volontaires reçus du manager : {len(volunteers_data)}")
 
         # Extraire tous les MACs des autres volontaires
         all_candidate_macs = [v["mac_address"] for v in volunteers_data if v["mac_address"] != my_mac]
-        logging.info(f"[Calcul voisins] Candidats disponibles : {len(all_candidate_macs)} (après exclusion du soi-même)")
+        logging.info(f"[Calcul voisins] Candidats disponibles : {len(all_candidate_macs)} (après exclusion de soi-même)")
 
         if not all_candidate_macs:
             logging.warning(
-                f"[Calcul voisins] Aucun autre volontaire disponible pour former le voisinage XOR. "
+                f"[Calcul voisins] Aucun autre volontaire disponible pour le Peer Sampling. "
                 f"En attente d'autres volontaires…"
             )
             return []
 
-        # Obtenir les k plus proches voisins par distance XOR
+        # Obtenir les k voisins échantillonnés aléatoirement (Peer Sampling)
         k_neighbors_requested = min(K_NEIGHBORS, len(all_candidate_macs))
-        k_nearest = get_k_nearest_neighbors(my_mac, all_candidate_macs, k_neighbors_requested)
+        k_nearest = get_peer_sample(my_mac, all_candidate_macs, k_neighbors_requested)
         logging.info(
-            f"[Calcul voisins] XOR : demandé {K_NEIGHBORS} voisins, "
+            f"[Calcul voisins] Peer Sampling : demandé {K_NEIGHBORS} voisins aléatoires, "
             f"obtenu {len(k_nearest)} (candidats : {len(all_candidate_macs)})"
         )
 
         if not k_nearest:
-            logging.warning("[Calcul voisins] Calcul XOR a retourné une liste vide.")
+            logging.warning("[Calcul voisins] Le Peer Sampling a retourné une liste vide.")
             return []
 
         # Classer par SW-UCB
@@ -489,7 +556,7 @@ class Volunteer:
                 "payload_bytes": len(compressed),
                 "send_ts_start": send_ts_start,
             })
-            # ✅ FIX : envoyer dest_mac ET dest_ip pour que le manager
+            #FIX : envoyer dest_mac ET dest_ip pour que le manager
             # puisse résoudre le destinataire quel que soit le format.
             # Le manager consulte d'abord dest_mac (clé directe dans _volunteers),
             # puis dest_ip (via _ip_to_mac), puis scan des current_ip.
@@ -515,6 +582,10 @@ class Volunteer:
                     f"Modèle envoyé → {dest_label}  "
                     f"({len(compressed)/1024:.1f} KB, ratio={ratio:.1f}x)"
                 )
+                self.model_profiler.record_communication(
+                    self._model_bytes / (1024**2),
+                    len(compressed) / (1024**2)
+                )
                 return True, len(compressed), send_duration, send_ts_start, send_ts_end
             logging.warning(f"Push refusé par manager : {rsp}")
         except Exception as exc:
@@ -534,7 +605,7 @@ class Volunteer:
                 send_message(conn, MSG_POLL_MODELS,
                              {
                                  "volunteer_ip":  self.my_ip,
-                                 "volunteer_mac": self.mac_address,  # ✅ FIX BUG 4 bis
+                                 "volunteer_mac": self.mac_address,
                                  "max_models":    5,
                              })
                 msg_type, data, payload = receive_message(conn)
@@ -546,6 +617,10 @@ class Volunteer:
                     decompress_model(rcv_m, payload, meta)
                     received_states.append(rcv_m.state_dict())
                     total_recv += len(payload)
+                    self.model_profiler.record_communication(
+                        self._model_bytes / (1024**2),
+                        len(payload) / (1024**2)
+                    )
                     # Tracer la réception
                     recv_ts = time.time()
                     send_ts_start = meta.get("send_ts_start")
@@ -614,7 +689,7 @@ class Volunteer:
         conn.connect((self.manager_host, MANAGER_PORT))
         return conn
 
-    # ─── Utilitaires ──────────────────────────────────────────────────────────
+    #Utilitaires
 
     @staticmethod
     def _detect_ip(remote_host: str) -> str:
@@ -630,12 +705,45 @@ class Volunteer:
 
     def _shutdown(self, *_):
         logging.info("Arrêt du volontaire…")
+        
+        # Affichage des rapports finaux des profileurs
+        try:
+            accuracy = getattr(self, "_last_test_acc", 0.0)
+            sys_report = self.system_profiler.stop_monitoring() # au cas où
+            
+            total_sys_report = {
+                "cpu_avg": round(sum(self.system_profiler.cpu_history) / max(len(self.system_profiler.cpu_history), 1), 1) if self.system_profiler.cpu_history else 0.0,
+                "cpu_peak": max(self.system_profiler.cpu_history) if self.system_profiler.cpu_history else 0.0,
+                "ram_peak": max(self.system_profiler.ram_history) if self.system_profiler.ram_history else 0.0,
+                "energy_used": round(sys_report.get("energy_used", 0.0), 1)
+            }
+            model_report = self.model_profiler.generate_report(accuracy)
+            
+            logging.info("="*60)
+            logging.info("RAPPORT FINAL DU SYSTEM PROFILER (MACHINE)")
+            logging.info("="*60)
+            logging.info(f"  CPU moyen            : {total_sys_report['cpu_avg']}%")
+            logging.info(f"  CPU pic              : {total_sys_report['cpu_peak']}%")
+            logging.info(f"  RAM pic              : {total_sys_report['ram_peak']:.2f} Go")
+            logging.info(f"  Énergie consommée    : {total_sys_report['energy_used']} Joules")
+            
+            logging.info("="*60)
+            logging.info("RAPPORT FINAL DU MODEL PROFILER (MODÈLE)")
+            logging.info("="*60)
+            logging.info(f"  Temps d'entraînement : {model_report['training_time']} s")
+            logging.info(f"  Trafic gradient brut : {model_report['gradient_traffic']:.2f} Mo")
+            logging.info(f"  Trafic compressé     : {model_report['compressed_traffic']:.2f} Mo")
+            logging.info(f"  Précision finale     : {model_report['final_accuracy']:.2f}%")
+            logging.info("="*60)
+        except Exception as e:
+            logging.warning(f"Impossible de générer les rapports de fin : {e}")
+            
         self._running = False
         self._stats.save()
         sys.exit(0)
 
 
-# ─── CLI ──────────────────────────────────────────────────────────────────────
+#CLI
 
 def parse_args():
     # Charger les valeurs depuis les variables d'environnement en guise de valeurs par défaut

@@ -75,7 +75,7 @@ def main():
                         choices=["quantization", "sparsification", "none"],
                         help="Méthode de compression (défaut: quantization)")
     parser.add_argument("--k",                type=int,   default=3,
-                        help="Nombre de voisins XOR par nœud (défaut: 3)")
+                        help="Taille du Peer Sampling (k) (défaut: 3)")
     parser.add_argument("--gossip-interval",  type=int,   default=30,
                         help="Secondes entre rounds gossip (défaut: 30)")
     parser.add_argument("--local-epochs",     type=int,   default=3,
@@ -132,7 +132,7 @@ def main():
     print(f"  Volontaires     : {args.n_volunteers}")
     print(f"  Dataset         : {args.dataset}  ({args.partition})")
     print(f"  Compression     : {args.compression}")
-    print(f"  Voisins XOR (k) : {args.k}")
+    print(f"  Taille Peer Sampling (k) : {args.k}")
     print(f"  Gossip interval : {args.gossip_interval}s")
     print(f"  Epochs locaux   : {args.local_epochs}")
     print(f"  Max rounds      : {args.max_rounds} (0 = sans limite)")

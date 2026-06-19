@@ -19,6 +19,9 @@ class ResourceInfo:
     cpu_freq_ghz: float              # Fréquence CPU en GHz
     ram_gb: float                    # RAM allouée en GB
     network_bandwidth_mbps: float    # Bande passante réseau en Mbps
+    battery: float = 100.0           # Batterie en %
+    disk_free_gb: float = 0.0        # Espace disque libre en GB
+    cpu_load: float = 0.0            # Charge CPU actuelle en %
     
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -145,7 +148,10 @@ def get_resource_info(
     cpu_cores: Optional[int] = None,
     cpu_freq_ghz: Optional[float] = None,
     ram_gb: Optional[float] = None,
-    network_bandwidth_mbps: Optional[float] = None
+    network_bandwidth_mbps: Optional[float] = None,
+    battery: Optional[float] = None,
+    disk_free_gb: Optional[float] = None,
+    cpu_load: Optional[float] = None
 ) -> ResourceInfo:
     """
     Obtient les informations de ressources du système.
@@ -173,10 +179,35 @@ def get_resource_info(
     # Network bandwidth (détection difficile, valeur par défaut 1000 Mbps)
     if network_bandwidth_mbps is None:
         network_bandwidth_mbps = 1000.0
+
+    # Batterie
+    if battery is None:
+        try:
+            bat = psutil.sensors_battery()
+            battery = bat.percent if bat is not None else 100.0
+        except:
+            battery = 100.0
+
+    # Espace disque libre
+    if disk_free_gb is None:
+        try:
+            disk_free_gb = psutil.disk_usage('.').free / (1024**3)
+        except:
+            disk_free_gb = 0.0
+
+    # Charge CPU actuelle
+    if cpu_load is None:
+        try:
+            cpu_load = psutil.cpu_percent(interval=0.1)
+        except:
+            cpu_load = 0.0
     
     return ResourceInfo(
         cpu_cores=cpu_cores,
         cpu_freq_ghz=round(cpu_freq_ghz, 2),
         ram_gb=round(ram_gb, 2),
         network_bandwidth_mbps=round(network_bandwidth_mbps, 2),
+        battery=round(battery, 1),
+        disk_free_gb=round(disk_free_gb, 2),
+        cpu_load=round(cpu_load, 1),
     )
