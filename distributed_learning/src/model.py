@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 
 class LightCNN_MNIST(nn.Module):
-    """CNN léger pour MNIST (1×28×28 → 10 classes)."""
+    """CNN léger pour MNIST (1×28×28 10 classes)."""
     def __init__(self, num_classes: int = 10):
         super().__init__()
         self.conv1 = nn.Conv2d(1, 16, kernel_size=3, padding=1)
@@ -27,7 +27,7 @@ class LightCNN_MNIST(nn.Module):
 
 
 class LightCNN_CIFAR(nn.Module):
-    """CNN léger pour CIFAR-10 (3×32×32 → 10 classes)."""
+    """CNN léger pour CIFAR-10 (3×32×32 10 classes)."""
     def __init__(self, num_classes: int = 10):
         super().__init__()
         self.conv1 = nn.Conv2d(3, 32, 3, padding=1)

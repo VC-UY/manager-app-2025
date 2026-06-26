@@ -1,0 +1,20 @@
+{
+  "my_mac": "54:BF:64:2F:A0:A3",
+  "window": 5,
+  "confidence": 0.95,
+  "xi": 4.0,
+  "history_size": 5,
+  "n_arms_seen": 2,
+  "per_arm": {
+    "1E:B0:37:39:E8:01": {
+      "total_pulls": 4,
+      "total_reward": 0.471,
+      "avg_reward": 0.118
+    },
+    "86:27:3C:25:4E:00": {
+      "total_pulls": 3,
+      "total_reward": 0.339,
+      "avg_reward": 0.113
+    }
+  }
+}

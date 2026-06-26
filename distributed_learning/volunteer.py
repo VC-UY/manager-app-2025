@@ -259,18 +259,41 @@ class Volunteer:
         self._running = False
 
     def _shutdown(self):
-        # Rapport final ModelProfiler
+        out_dir = os.path.join(STATS_DIR, f"volunteer_{self.vol_id}")
+        os.makedirs(out_dir, exist_ok=True)
+
+        # ── Rapport final AdvancedProfiler (rss_baseline + métriques session) ──
+        try:
+            # Si un monitoring est encore actif (arrêt en cours de round), on le stoppe
+            if self.adv_profiler._monitoring:
+                self.adv_profiler.stop_monitoring()
+
+            adv_final_report = self.adv_profiler.get_full_report()
+            adv_final_report["session_info"] = {
+                "volunteer_id": self.vol_id,
+                "total_rounds": self.round_num,
+                "mac": self.my_mac,
+            }
+            # Inclure explicitement la baseline capturée en début de session
+            adv_final_report["baseline_captured"] = self.adv_profiler.baseline
+
+            adv_out = os.path.join(out_dir, "advanced_profile_final.json")
+            with open(adv_out, "w", encoding="utf-8") as f:
+                json.dump(adv_final_report, f, indent=2, ensure_ascii=False, default=str)
+            logging.info(f"[Volontaire {self.vol_id}] Rapport AdvProfiler final -> {adv_out}")
+        except Exception as exc:
+            logging.warning(f"[Volontaire {self.vol_id}] Rapport AdvProfiler final KO : {exc}")
+
+        # ── Rapport final ModelProfiler ──────────────────────────────────────
         try:
             final_test_acc = self._evaluate_test()
             final_report = self.model_profiler.generate_report(test_accuracy=final_test_acc)
-            out_dir = os.path.join(STATS_DIR, f"volunteer_{self.vol_id}")
-            os.makedirs(out_dir, exist_ok=True)
             out_file = os.path.join(out_dir, "model_profile_final.json")
             with open(out_file, "w", encoding="utf-8") as f:
                 json.dump(final_report, f, indent=2, ensure_ascii=False)
-            logging.info(f"[Volontaire {self.vol_id}] Rapport final sauvegardé -> {out_file}")
+            logging.info(f"[Volontaire {self.vol_id}] Rapport ModelProfiler final -> {out_file}")
         except Exception as exc:
-            logging.warning(f"[Volontaire {self.vol_id}] Rapport final KO : {exc}")
+            logging.warning(f"[Volontaire {self.vol_id}] Rapport ModelProfiler final KO : {exc}")
 
         try:
             if self._heartbeat_sock:
@@ -424,7 +447,8 @@ class Volunteer:
         return clean
 
     def _train_local_safe(self, max_grad_norm: float = 1.0):
-        snap = self._snapshot_state(self.model)
+        # Snapshot initial (utilisé uniquement pour le rollback de fin de round)
+        round_snap = self._snapshot_state(self.model)
         self.model.train()
         optimizer = optim.SGD(self.model.parameters(),
                               lr=LEARNING_RATE, momentum=0.9)
@@ -439,6 +463,9 @@ class Volunteer:
                 batch_start = time.time()
                 x, y = x.to(self.device), y.to(self.device)
 
+                # ── Snapshot PAR BATCH pour rollback précis ────────────────
+                batch_snap = self._snapshot_state(self.model)
+
                 optimizer.zero_grad()
                 out = self.model(x)
                 loss = criterion(out, y)
@@ -446,7 +473,9 @@ class Volunteer:
                 if not torch.isfinite(loss):
                     n_skipped += 1
                     logging.warning(f"[Volontaire {self.vol_id}] Loss non finie "
-                                    f"(epoch {epoch} batch {batch_idx}) -> skip.")
+                                    f"(epoch {epoch} batch {batch_idx}) -> skip batch.")
+                    # Remettre le modèle à l'état PRE-batch (pas au début du round)
+                    self._rollback(self.model, batch_snap)
                     continue
 
                 loss.backward()
@@ -458,7 +487,8 @@ class Volunteer:
                     n_skipped += 1
                     logging.warning(f"[Volontaire {self.vol_id}] NaN après step "
                                     f"(batch {batch_idx}) -> rollback batch.")
-                    self._rollback(self.model, snap)
+                    # Remettre le modèle à l'état PRE-batch (pas au début du round)
+                    self._rollback(self.model, batch_snap)
                     continue
 
                 with torch.no_grad():
@@ -480,13 +510,21 @@ class Volunteer:
             )
 
         duration = time.time() - t0
-        avg_loss = total_loss / max(1, total_seen)
-        avg_acc = total_correct / max(1, total_seen)
+
+        if total_seen == 0:
+            # Tous les batches ont été skippés -> rollback complet au début du round
+            logging.error(f"[Volontaire {self.vol_id}] Aucun batch valide sur l'epoch entière "
+                          f"-> rollback complet au snapshot de début de round.")
+            self._rollback(self.model, round_snap)
+            return float("nan"), 0.0, duration, n_skipped
+
+        avg_loss = total_loss / total_seen
+        avg_acc = total_correct / total_seen
 
         if not self._is_model_finite(self.model):
             logging.error(f"[Volontaire {self.vol_id}] Modèle corrompu en fin de round "
                           f"-> rollback complet.")
-            self._rollback(self.model, snap)
+            self._rollback(self.model, round_snap)
             avg_loss = float("nan")
 
         return avg_loss, avg_acc, duration, n_skipped
