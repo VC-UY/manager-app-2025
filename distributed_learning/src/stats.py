@@ -46,6 +46,23 @@ class RoundStats:
     energy_used_joules: float = 0.0
     gradient_size_mb:   float = 0.0
     batch_time_avg_s:   float = 0.0
+    # Advanced Linux Profiler fields
+    rss_baseline_kb:    int = 0
+    rss_peak_kb:        int = 0
+    rss_avg_kb:         float = 0.0
+    rss_delta_kb:       int = 0
+    pss_peak_kb:        int = 0
+    pss_avg_kb:         float = 0.0
+    uss_peak_kb:        int = 0
+    uss_avg_kb:         float = 0.0
+    rss_profile:        List[List[float]] = field(default_factory=list)
+    cpu_avg_pct:        float = 0.0
+    cpu_max_mhz:        float = 0.0
+    cpu_avg_freq_mhz:   float = 0.0
+    throttle_ratio:     float = 0.0
+    ete_seconds:        float = 0.0
+    n_samples:          int = 0
+    ipc:                float = None
 
 
 class StatsTracker:

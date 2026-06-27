@@ -54,6 +54,10 @@ def _quantize(data: np.ndarray, bits: int = 8) -> Tuple[np.ndarray, float, float
 
     qmin, qmax = -(2 ** (bits - 1)), 2 ** (bits - 1) - 1
     dmin, dmax = float(data.min()), float(data.max())
+    # Assurer que 0.0 est inclus dans l'intervalle pour éviter un zero-point géant
+    # qui causerait une perte de précision dramatique sur les float32.
+    dmin = min(0.0, dmin)
+    dmax = max(0.0, dmax)
 
     # Cas constant : on stocke la constante dans scale, zp=0 -> reconstruction exacte.
     if dmin == dmax:

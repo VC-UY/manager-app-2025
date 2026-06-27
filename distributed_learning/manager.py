@@ -36,7 +36,7 @@ from src.config import (
     MAX_CONNECTIONS, MAX_RETRIES, RETRY_DELAY,
     STATS_PRINT_INTERVAL, LOG_LEVEL, STATS_DIR,
     SW_UCB_WINDOW, SW_UCB_CONFIDENCE,
-    DATASET, NUM_CLASSES, BATCH_SIZE, COMPRESSION,
+    MODEL_NAME, DATASET, NUM_CLASSES, BATCH_SIZE, COMPRESSION,
     QUANTIZATION_BITS, SPARSIFICATION_RATIO,
     GOSSIP_INTERVAL, GOSSIP_FANOUT,
 )
@@ -79,7 +79,7 @@ class Manager:
             import torch
             from src.model import create_model
             from src.profiler import ModelProfiler
-            m = create_model(DATASET, NUM_CLASSES).to("cpu")
+            m = create_model(MODEL_NAME, NUM_CLASSES).to("cpu")
             prof = ModelProfiler(m)
             est = prof.estimate_needs(
                 dataset_name=DATASET,
@@ -93,7 +93,10 @@ class Manager:
                 network_bandwidth_mbps=1000.0
             )
             self._ram_needed = est["ram_needed"]
-            logging.info(f"Besoins estimés du modèle '{DATASET}' : RAM nécessaire = {self._ram_needed} GB")
+            logging.info(
+                f"Besoins estimés du modèle '{MODEL_NAME}' sur '{DATASET}' : "
+                f"RAM nécessaire = {self._ram_needed:.2f} GB"
+            )
         except Exception as e:
             logging.warning(f"Impossible d'estimer les besoins du modèle : {e}. Utilisation d'une valeur par défaut (0.5 Go).")
             self._ram_needed = 0.5
@@ -458,6 +461,7 @@ class Manager:
                     f"(stats push de {sender_ip})"
                 )
             self._stats.update_volunteer_summary(real_ip, summary)
+            self._stats.save()
             logging.debug(f"Stats reçues de {real_ip} (round {summary.get('current_round', '?')})")
 
     def _on_stats_request(self, conn: socket.socket):

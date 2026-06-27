@@ -65,9 +65,14 @@ def main():
     )
     parser.add_argument("--n-volunteers",     type=int,   default=3,
                         help="Nombre de volontaires (défaut: 3)")
-    parser.add_argument("--dataset",          default="mnist",
-                        choices=["mnist", "cifar10"],
-                        help="Dataset (défaut: mnist)")
+    parser.add_argument("--model",            default="resnet50",
+                        choices=["resnet50", "resnet101", "resnet152", "vgg19"],
+                        help="Architecture du modèle (défaut: resnet50)")
+    parser.add_argument("--dataset",          default="cifar10",
+                        choices=["cifar10", "cifar100", "imagenet"],
+                        help="Dataset (défaut: cifar10)")
+    parser.add_argument("--num-classes",      type=int, default=0,
+                        help="Nombre de classes (0 = auto depuis dataset)")
     parser.add_argument("--partition",        default="iid",
                         choices=["iid", "non-iid"],
                         help="Partition des données (défaut: iid)")
@@ -90,6 +95,11 @@ def main():
                         help="Préfixe IP simulé (défaut: 10.0.0.)")
     args = parser.parse_args()
 
+    # Nombre de classes automatique
+    _num_classes_map = {"cifar10": 10, "cifar100": 100, "imagenet": 1000}
+    if args.num_classes == 0:
+        args.num_classes = _num_classes_map.get(args.dataset, 10)
+
     python = sys.executable
     os.makedirs("logs",    exist_ok=True)
     os.makedirs("results", exist_ok=True)
@@ -109,7 +119,9 @@ def main():
         "GOSSIP_INTERVAL":       str(args.gossip_interval),
         "GOSSIP_FANOUT":         "1",
         "LOCAL_EPOCHS":          str(args.local_epochs),
+        "MODEL_NAME":            args.model,
         "DATASET":               args.dataset,
+        "NUM_CLASSES":           str(args.num_classes),
         "DATA_PARTITION":        args.partition,
         "COMPRESSION":           args.compression,
         "QUANTIZATION_BITS":     str(args.bits),
@@ -130,7 +142,8 @@ def main():
     print("  LANCEMENT — SYSTÈME D'APPRENTISSAGE DISTRIBUÉ FRUGAL")
     print(sep)
     print(f"  Volontaires     : {args.n_volunteers}")
-    print(f"  Dataset         : {args.dataset}  ({args.partition})")
+    print(f"  Modèle          : {args.model}")
+    print(f"  Dataset         : {args.dataset}  ({args.partition}) — {args.num_classes} classes")
     print(f"  Compression     : {args.compression}")
     print(f"  Taille Peer Sampling (k) : {args.k}")
     print(f"  Gossip interval : {args.gossip_interval}s")

@@ -1,61 +1,89 @@
 """
-Définitions des modèles légers utilisés par les volontaires.
+Définitions des modèles utilisés par les volontaires pour les expérimentations.
+
+Modèles disponibles
+-------------------
+  - resnet50   : ResNet-50   (~25 M paramètres)
+  - resnet101  : ResNet-101  (~44 M paramètres)
+  - resnet152  : ResNet-152  (~60 M paramètres)
+  - vgg19      : VGG-19      (~143 M paramètres)
+
+Tous ces modèles acceptent des images 3×224×224.
+Les datasets CIFAR-10 et CIFAR-100 (3×32×32) sont redimensionnés à 224×224
+directement dans les transformations de dataset.py.
+ImageNet est déjà en 224×224.
+
+Utilisation :
+    from src.model import create_model, model_parameter_bytes
+    model = create_model("resnet50", num_classes=10)
+    model = create_model("vgg19",    num_classes=100)
 """
+
+import logging
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import torchvision.models as tv_models
+
+# ─── Registre des modèles supportés ──────────────────────────────────────────
+_SUPPORTED_MODELS = ("resnet50", "resnet101", "resnet152", "vgg19")
 
 
-class LightCNN_MNIST(nn.Module):
-    """CNN léger pour MNIST (1×28×28 10 classes)."""
-    def __init__(self, num_classes: int = 10):
-        super().__init__()
-        self.conv1 = nn.Conv2d(1, 16, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
-        self.pool  = nn.MaxPool2d(2, 2)
-        self.fc1   = nn.Linear(32 * 7 * 7, 128)
-        self.fc2   = nn.Linear(128, num_classes)
-        self.drop  = nn.Dropout(0.25)
+def create_model(model_name: str = "resnet50",
+                 num_classes: int = 10) -> nn.Module:
+    """
+    Instancie un modèle pré-architecturé (sans poids pré-entraînés)
+    et adapte la couche de sortie au nombre de classes demandé.
 
-    def forward(self, x):
-        x = self.pool(F.relu(self.conv1(x)))   # 16×14×14
-        x = self.pool(F.relu(self.conv2(x)))   # 32×7×7
-        x = x.view(x.size(0), -1)
-        x = F.relu(self.fc1(x))
-        x = self.drop(x)
-        return self.fc2(x)
+    Args:
+        model_name  : identifiant du modèle (voir _SUPPORTED_MODELS).
+        num_classes : nombre de classes de sortie (10 pour CIFAR-10,
+                      100 pour CIFAR-100, 1000 pour ImageNet).
 
+    Returns:
+        nn.Module prêt à l'emploi, avec weights=None (initialisation aléatoire).
 
-class LightCNN_CIFAR(nn.Module):
-    """CNN léger pour CIFAR-10 (3×32×32 10 classes)."""
-    def __init__(self, num_classes: int = 10):
-        super().__init__()
-        self.conv1 = nn.Conv2d(3, 32, 3, padding=1)
-        self.conv2 = nn.Conv2d(32, 64, 3, padding=1)
-        self.conv3 = nn.Conv2d(64, 64, 3, padding=1)
-        self.pool  = nn.MaxPool2d(2, 2)
-        self.fc1   = nn.Linear(64 * 4 * 4, 256)
-        self.fc2   = nn.Linear(256, num_classes)
-        self.drop  = nn.Dropout(0.4)
+    Raises:
+        ValueError : si model_name n'est pas supporté.
+    """
+    name = model_name.lower().strip()
 
-    def forward(self, x):
-        x = self.pool(F.relu(self.conv1(x)))   # 32×16×16
-        x = self.pool(F.relu(self.conv2(x)))   # 64×8×8
-        x = self.pool(F.relu(self.conv3(x)))   # 64×4×4
-        x = x.view(x.size(0), -1)
-        x = F.relu(self.fc1(x))
-        x = self.drop(x)
-        return self.fc2(x)
+    if name == "resnet50":
+        model = tv_models.resnet50(weights=None)
+        model.fc = nn.Linear(model.fc.in_features, num_classes)
 
+    elif name == "resnet101":
+        model = tv_models.resnet101(weights=None)
+        model.fc = nn.Linear(model.fc.in_features, num_classes)
 
-def create_model(dataset: str = "mnist", num_classes: int = 10) -> nn.Module:
-    if dataset == "mnist":
-        return LightCNN_MNIST(num_classes)
-    elif dataset == "cifar10":
-        return LightCNN_CIFAR(num_classes)
-    raise ValueError(f"Dataset inconnu : {dataset}")
+    elif name == "resnet152":
+        model = tv_models.resnet152(weights=None)
+        model.fc = nn.Linear(model.fc.in_features, num_classes)
+
+    elif name == "vgg19":
+        model = tv_models.vgg19(weights=None)
+        # Remplacer la dernière couche linéaire du classifier VGG-19
+        in_features = model.classifier[-1].in_features
+        model.classifier[-1] = nn.Linear(in_features, num_classes)
+
+    else:
+        raise ValueError(
+            f"Modèle inconnu : '{model_name}'. "
+            f"Modèles supportés : {_SUPPORTED_MODELS}"
+        )
+
+    n_params = sum(p.numel() for p in model.parameters()) / 1e6
+    logging.info(
+        f"[Model] '{name}' créé : {n_params:.1f} M paramètres, "
+        f"{num_classes} classes de sortie."
+    )
+    return model
 
 
 def model_parameter_bytes(model: nn.Module) -> int:
-    """Taille totale des paramètres en float32 (non compressés)."""
+    """Taille totale des paramètres en float32 (non compressés), en octets."""
     return sum(p.numel() for p in model.parameters()) * 4
+
+
+def list_models() -> tuple:
+    """Retourne la liste des noms de modèles disponibles."""
+    return _SUPPORTED_MODELS

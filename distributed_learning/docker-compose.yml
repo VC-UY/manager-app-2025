@@ -38,7 +38,7 @@ services:
       # OPTIONAL — all have defaults (see src/config.py)
       - N_VOLUNTEERS=${N_VOLUNTEERS:-5}
       - MY_IP=${MY_IP:-}
-      - DATASET=${DATASET:-mnist}
+      - DATASET=${DATASET:-cifar10}
       - DATA_PARTITION=${DATA_PARTITION:-iid}
       - COMPRESSION=${COMPRESSION:-quantization}
       - K_NEIGHBORS=${K_NEIGHBORS:-3}
@@ -46,7 +46,7 @@ services:
       - GOSSIP_FANOUT=${GOSSIP_FANOUT:-1}
       - LOCAL_EPOCHS=${LOCAL_EPOCHS:-3}
       - BATCH_SIZE=${BATCH_SIZE:-32}
-      - LEARNING_RATE=${LEARNING_RATE:-0.01}
+      - LEARNING_RATE=${LEARNING_RATE:-0.001}
       - NUM_CLASSES=${NUM_CLASSES:-10}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - STATS_DIR=${STATS_DIR:-/app/results}

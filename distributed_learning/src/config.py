@@ -36,14 +36,26 @@ GOSSIP_FANOUT = int(os.getenv("GOSSIP_FANOUT", "1"))           # nombre de pairs
 # =============================================================================
 LOCAL_EPOCHS = int(os.getenv("LOCAL_EPOCHS", "3"))
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "32"))
-LEARNING_RATE = float(os.getenv("LEARNING_RATE", "0.01"))
+LEARNING_RATE = float(os.getenv("LEARNING_RATE", "0.001"))
 MAX_ROUNDS = int(os.getenv("MAX_ROUNDS", "15"))
+
+# =============================================================================
+# MODÈLE
+# =============================================================================
+# Architectures disponibles : resnet50 | resnet101 | resnet152 | vgg19
+MODEL_NAME = os.getenv("MODEL_NAME", "resnet50").lower()
 
 # =============================================================================
 # DONNÉES
 # =============================================================================
-DATASET = os.getenv("DATASET", "mnist").lower()               # mnist, cifar10
-NUM_CLASSES = int(os.getenv("NUM_CLASSES", "10"))
+# Datasets disponibles : cifar10 | cifar100 | imagenet
+DATASET = os.getenv("DATASET", "cifar10").lower()
+
+# Nombre de classes — déduit automatiquement du dataset si non surchargé
+_NUM_CLASSES_MAP = {"cifar10": 10, "cifar100": 100, "imagenet": 1000}
+_default_num_classes = _NUM_CLASSES_MAP.get(DATASET, 10)
+NUM_CLASSES = int(os.getenv("NUM_CLASSES", str(_default_num_classes)))
+
 DATA_PARTITION = os.getenv("DATA_PARTITION", "iid")       # iid, non-iid
 N_VOLUNTEERS = int(os.getenv("N_VOLUNTEERS", "5"))
 
@@ -116,6 +128,8 @@ if __name__ == "__main__":
     print(f"MANAGER_HOST={MANAGER_HOST}")
     print(f"MANAGER_PORT={MANAGER_PORT}")
     print(f"K_NEIGHBORS={K_NEIGHBORS}")
+    print(f"MODEL_NAME={MODEL_NAME}")
     print(f"DATASET={DATASET}")
+    print(f"NUM_CLASSES={NUM_CLASSES}")
     print(f"LOG_LEVEL={LOG_LEVEL}")
     print("=" * 60)

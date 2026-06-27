@@ -156,34 +156,46 @@ class ModelProfiler:
                        gossip_interval: float = 60.0,
                        fanout: int = 1,
                        network_bandwidth_mbps: float = 1000.0) -> Dict[str, Any]:
-        """Estimer les besoins matériels du modèle (avant entraînement)."""
+        """Estimer les besoins matériels du modèle (avant entraînement).
+
+        IMPORTANT : toutes les opérations sur le modèle sont effectuées sur une
+        COPIE indépendante (import copy / deepcopy) pour ne jamais modifier les
+        vrais poids du volontaire.
+        """
+        import copy
+
+        # ── Copie temporaire : jamais toucher self.model ──────────────────────
+        model_copy = copy.deepcopy(self.model)
+        model_copy.eval()
+
         # Taille des paramètres en Mo
         param_size_mb = self.param_bytes / (1024**2)
         # Taille des gradients en Mo
-        gradient_size_mb = param_size_mb # mêmes dimensions
+        gradient_size_mb = param_size_mb  # mêmes dimensions
 
         # Mémoire nécessaire : Modèle + Gradients + Optimiseur + Activations
         opt_factor = 2 if optimizer_type.lower() == "sgd" else 3
         optimizer_mem_mb = opt_factor * param_size_mb
 
-        # Activations memory: estimation dynamique
-        input_shape = (batch_size, 1, 28, 28) if dataset_name.lower() == "mnist" else (batch_size, 3, 32, 32)
+        # Activations memory: estimation dynamique sur la COPIE
+        # Taille d'entrée : tous les datasets sont redimensionnés à 224×224
+        # (CIFAR-10/100 via transforms, ImageNet nativement)
+        input_shape = (batch_size, 3, 224, 224)
         dummy_input = torch.zeros(input_shape, device=self.device)
-        
+
         torch.cuda.empty_cache()
         if self.device.type == "cuda":
             torch.cuda.reset_peak_memory_stats()
             mem_before = torch.cuda.memory_allocated()
             try:
-                out = self.model(dummy_input)
-                loss = out.sum()
-                loss.backward()
+                with torch.no_grad():
+                    out = model_copy(dummy_input)
                 peak_mem = torch.cuda.max_memory_allocated()
                 act_mem_mb = (peak_mem - mem_before) / (1024**2)
             except Exception:
-                act_mem_mb = (batch_size * 0.1)
+                act_mem_mb = float(batch_size) * 0.1
         else:
-            act_mem_mb = (batch_size * 0.2)
+            act_mem_mb = float(batch_size) * 0.2
 
         ram_needed_mb = param_size_mb + gradient_size_mb + optimizer_mem_mb + act_mem_mb
         ram_needed_gb = ram_needed_mb / 1024.0
@@ -200,24 +212,36 @@ class ModelProfiler:
 
         # Coût total de communication par round pour envoyer le modèle à fanout voisins
         communication_cost_mb = comp_size_mb * fanout
-        
-        # Bande passante minimale requise en Mbps de sorte à envoyer en 10% du gossip_interval
+
+        # Bande passante minimale requise en Mbps (envoi en 10 % du gossip_interval)
         target_send_time = gossip_interval * 0.1
         min_bw_mbps = (comp_size_mb * 8) / max(0.1, target_send_time)
 
-        # Estimation du temps d'une époque (sur base d'une simulation rapide)
-        images_per_volunteer = 60000 // 5 if dataset_name.lower() == "mnist" else 50000 // 5
+        # Estimation du temps d'une époque — warmup sur la COPIE avec CrossEntropyLoss
+        _train_sizes = {"cifar10": 50_000, "cifar100": 50_000, "imagenet": 1_281_167}
+        train_size = _train_sizes.get(dataset_name.lower(), 50_000)
+        images_per_volunteer = train_size // max(1, 5)   # estimation sur 5 volontaires
         batches_per_epoch = images_per_volunteer // batch_size
-        
+
+        model_copy.train()
+        criterion_tmp = torch.nn.CrossEntropyLoss()
+        dummy_labels = torch.zeros(batch_size, dtype=torch.long, device=self.device)
+        opt_tmp = torch.optim.SGD(model_copy.parameters(), lr=0.01)
+
         t0 = time.time()
-        opt = torch.optim.SGD(self.model.parameters(), lr=0.01)
         for _ in range(5):
-            opt.zero_grad()
-            out = self.model(dummy_input)
-            loss = out.sum()
-            loss.backward()
-            opt.step()
+            opt_tmp.zero_grad()
+            out = model_copy(dummy_input)
+            loss_tmp = criterion_tmp(out, dummy_labels)
+            if torch.isfinite(loss_tmp):
+                loss_tmp.backward()
+                opt_tmp.step()
         t1 = time.time()
+
+        # Nettoyage explicite de la copie
+        del model_copy, opt_tmp, dummy_input, dummy_labels
+        torch.cuda.empty_cache()
+
         step_time_avg = (t1 - t0) / 5.0
         epoch_time_estimate = step_time_avg * batches_per_epoch
 

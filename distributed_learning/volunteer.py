@@ -19,6 +19,7 @@ Démarrage :
 import argparse
 import json
 import logging
+import math
 import os
 import signal
 import socket
@@ -39,7 +40,7 @@ from src.config import (
     COORDINATOR_PORT, MANAGER_PORT,
     K_NEIGHBORS, GOSSIP_INTERVAL, GOSSIP_FANOUT,
     LOCAL_EPOCHS, MAX_ROUNDS, BATCH_SIZE, LEARNING_RATE,
-    DATASET, NUM_CLASSES, DATA_PARTITION,
+    MODEL_NAME, DATASET, NUM_CLASSES, DATA_PARTITION,
     COMPRESSION, QUANTIZATION_BITS, SPARSIFICATION_RATIO,
     HEARTBEAT_INTERVAL, SOCKET_TIMEOUT,
     MAX_RETRIES, RETRY_DELAY, LOG_LEVEL, STATS_DIR,
@@ -97,7 +98,7 @@ class Volunteer:
 
         # Modèle, données, optimiseur
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = create_model(DATASET, NUM_CLASSES).to(self.device)
+        self.model = create_model(MODEL_NAME, NUM_CLASSES).to(self.device)
         self.train_loader, self.test_loader = load_dataset(
             dataset=DATASET, data_dir="./data",
             volunteer_id=self.vol_id, n_volunteers=self.n_volunteers,
@@ -123,6 +124,8 @@ class Volunteer:
         # État
         self._running = True
         self._stats = StatsTracker(volunteer_ip=self.my_ip, results_dir=STATS_DIR)
+        self.last_neighbors_list = []
+        self.round_recv_details = []
         self._heartbeat_sock: Optional[socket.socket] = None
 
         signal.signal(signal.SIGINT, self._on_signal)
@@ -295,6 +298,13 @@ class Volunteer:
         except Exception as exc:
             logging.warning(f"[Volontaire {self.vol_id}] Rapport ModelProfiler final KO : {exc}")
 
+        # ── Sauvegarde et push final des statistiques ─────────────────────────
+        try:
+            self._stats.save()
+            self._push_stats_to_manager()
+        except Exception as exc:
+            logging.warning(f"[Volontaire {self.vol_id}] Sauvegarde/push final des stats KO : {exc}")
+
         try:
             if self._heartbeat_sock:
                 send_message(self._heartbeat_sock, MSG_DISCONNECT, {"mac": self.my_mac})
@@ -353,6 +363,7 @@ class Volunteer:
             s.close()
             if msg_type == MSG_NEIGHBORS_RESPONSE:
                 vol_list = data.get("volunteers", data.get("neighbors", []))
+                self.last_neighbors_list = vol_list
                 # Extraire toutes les adresses MAC des autres volontaires
                 all_macs = [v.get("mac_address") for v in vol_list if v.get("mac_address") and v.get("mac_address") != self.my_mac]
                 # Effectuer un peer sampling aléatoire local pour obtenir k voisins
@@ -389,9 +400,31 @@ class Volunteer:
                     break
                 if msg_type != MSG_MODEL_DELIVERY or not payload:
                     break
-                tmp_model = create_model(DATASET, NUM_CLASSES)
+
+                # Comptabiliser la réception
+                payload_len = len(payload)
+                self.round_bytes_received += payload_len
+                self.round_n_models_received += 1
+
+                meta = data.get("metadata", {})
+                sender_mac = data.get("sender_ip", "unknown")  # Le manager renvoie sender_ip (qui contient le MAC du sender)
+                send_ts_start = meta.get("send_ts_start")
+                recv_ts = time.time()
+                transfer_time = (recv_ts - send_ts_start) if send_ts_start else None
+
+                self.round_recv_details.append({
+                    "sender": sender_mac,
+                    "bytes": payload_len,
+                    "send_ts_start": send_ts_start,
+                    "payload_bytes": payload_len,
+                    "recv_ts": recv_ts,
+                    "send_duration_s": meta.get("send_duration_s"),
+                    "transfer_time_s": transfer_time
+                })
+
+                tmp_model = create_model(MODEL_NAME, NUM_CLASSES)
                 try:
-                    decompress_model(tmp_model, payload, data.get("meta", {}))
+                    decompress_model(tmp_model, payload, meta)
                     states.append(tmp_model.state_dict())
                 except Exception as exc:
                     logging.warning(f"[Volontaire {self.vol_id}] Décompression KO : {exc}")
@@ -450,18 +483,37 @@ class Volunteer:
         # Snapshot initial (utilisé uniquement pour le rollback de fin de round)
         round_snap = self._snapshot_state(self.model)
         self.model.train()
+
+        # ── Warmup linéaire pour les grands modèles (ResNet, VGG) ─────────
+        # Les premiers batches utilisent un LR réduit puis montent linéairement
+        # vers LEARNING_RATE pour éviter la divergence sur poids aléatoires.
+        WARMUP_BATCHES = 10
+        base_lr = LEARNING_RATE
+
         optimizer = optim.SGD(self.model.parameters(),
-                              lr=LEARNING_RATE, momentum=0.9)
+                              lr=base_lr / 10.0, momentum=0.9,
+                              weight_decay=1e-4)
         criterion = nn.CrossEntropyLoss()
 
         t0 = time.time()
         total_loss, total_correct, total_seen, n_skipped = 0.0, 0, 0, 0
+        global_batch_idx = 0   # compteur de batches global sur toutes les epochs
 
         for epoch in range(LOCAL_EPOCHS):
             epoch_start = time.time()
             for batch_idx, (x, y) in enumerate(self.train_loader):
                 batch_start = time.time()
                 x, y = x.to(self.device), y.to(self.device)
+
+                # ── Warmup LR linéaire sur les premiers batches ────────────
+                if self.round_num <= 1 and global_batch_idx < WARMUP_BATCHES:
+                    warmup_lr = base_lr * (0.1 + 0.9 * global_batch_idx / WARMUP_BATCHES)
+                    for pg in optimizer.param_groups:
+                        pg['lr'] = warmup_lr
+                elif self.round_num <= 1 and global_batch_idx == WARMUP_BATCHES:
+                    for pg in optimizer.param_groups:
+                        pg['lr'] = base_lr
+                global_batch_idx += 1
 
                 # ── Snapshot PAR BATCH pour rollback précis ────────────────
                 batch_snap = self._snapshot_state(self.model)
@@ -562,11 +614,35 @@ class Volunteer:
         except Exception as exc:
             logging.warning(f"[Volontaire {self.vol_id}] save_profile_report KO : {exc}")
 
+    def _push_stats_to_manager(self):
+        """Envoie le résumé complet des stats (avec tous les rounds) au manager."""
+        try:
+            summary_data = self._stats.summary()
+            if not summary_data:
+                return
+            s = self._open_manager_conn()
+            send_message(s, MSG_STATS_PUSH, {
+                "volunteer_ip": self.my_ip,
+                "summary": summary_data,
+            })
+            msg_type, _, _ = receive_message(s)
+            s.close()
+        except Exception as exc:
+            logging.warning(f"[Volontaire {self.vol_id}] Push stats to manager KO : {exc}")
+
     # ─── Boucle d'un round gossip ───────────────────────────────────────────
     def _run_gossip_round(self):
         self.round_num += 1
         round_start = time.time()
         logging.info(f"[Volontaire {self.vol_id}] === Round gossip #{self.round_num} ===")
+
+        # Réinitialisation des compteurs de com pour ce round
+        self.round_bytes_received = 0
+        self.round_n_models_received = 0
+        self.round_recv_details = []
+        round_bytes_sent = 0
+        round_sent_details = []
+        ratio = 1.0
 
         # PROFILAGE AVANCÉ : démarrage monitoring pour tout le round
         self.adv_profiler.start_monitoring()
@@ -593,9 +669,29 @@ class Volunteer:
 
             for peer_mac in peers:
                 t0 = time.time()
-                success = self._send_model_to_peer(peer_mac, compressed_bytes, meta)
+                # On ajoute le timestamp de début d'envoi dans les métadonnées
+                peer_meta = dict(meta or {})
+                peer_meta["send_ts_start"] = t0
+                success = self._send_model_to_peer(peer_mac, compressed_bytes, peer_meta)
                 duration = time.time() - t0
                 self._record_transfer_reward(peer_mac, n_bytes, duration, success)
+                
+                if success:
+                    round_bytes_sent += n_bytes
+                    # Trouver l'IP associée à peer_mac dans candidates si disponible
+                    peer_ip = "unknown"
+                    for cand in self.last_neighbors_list:
+                        if cand.get("mac_address") == peer_mac:
+                            peer_ip = cand.get("current_ip", "unknown")
+                            break
+                    round_sent_details.append({
+                        "dest_mac": peer_mac,
+                        "dest_ip": peer_ip,
+                        "bytes": n_bytes,
+                        "send_duration_s": duration,
+                        "send_ts_start": t0,
+                        "send_ts_end": t0 + duration
+                    })
 
                 # ── ModelProfiler : enregistre le coût de communication ──
                 self.model_profiler.record_communication(
@@ -644,6 +740,111 @@ class Volunteer:
 
         self._save_profile_report(adv_report)
         self._save_selector_stats()
+
+        # 5. Enregistrement des statistiques structurées
+        try:
+            # Calcul du meilleur test acc à ce jour
+            all_rounds = self._stats.rounds
+            best_acc_so_far = max([r.test_acc for r in all_rounds] + [test_acc])
+            best_acc_ts = time.time()
+
+            # Extraire les voisins triés avec leur rank et score UCB
+            try:
+                all_macs = [item.get("mac_address") for item in self.last_neighbors_list if item.get("mac_address")]
+                ucb_scores = self.selector._compute_ucb(all_macs, self.round_num)
+            except Exception:
+                ucb_scores = {}
+
+            neighbors_info = []
+            for v in self.last_neighbors_list:
+                mac = v.get("mac_address")
+                if not mac:
+                    continue
+                score = ucb_scores.get(mac, float("inf"))
+                neighbors_info.append({
+                    "mac_address": mac,
+                    "current_ip": v.get("current_ip"),
+                    "resources": v.get("resources"),
+                    "last_heartbeat": v.get("last_heartbeat"),
+                    "bandwidth_history": v.get("bandwidth_history"),
+                    "sw_ucb_score": score if math.isfinite(score) else 100.0,
+                    "sw_ucb_rank": 0
+                })
+            
+            neighbors_info.sort(key=lambda x: x["sw_ucb_score"], reverse=True)
+            for rank, item in enumerate(neighbors_info, start=1):
+                item["sw_ucb_rank"] = rank
+
+            # Estimation de l'énergie et niveau de batterie
+            try:
+                import psutil
+                bat = psutil.sensors_battery()
+                battery = bat.percent if bat is not None else 100.0
+            except Exception:
+                battery = 100.0
+
+            cpu_avg = adv_metrics.get("cpu_avg_pct", 0.0)
+            cpu_load_fraction = cpu_avg / 100.0
+            # Estimation de l'énergie avec 65W TDP et 10W idle
+            watts_avg = 10.0 + cpu_load_fraction * (65.0 - 10.0)
+            energy_used = watts_avg * round_dur
+
+            orig_size = model_parameter_bytes(self.model)
+
+            self._stats.record(
+                round_num=self.round_num,
+                train_loss=train_loss,
+                train_acc=train_acc,
+                test_acc=test_acc,
+                train_duration_s=train_dur,
+                bytes_sent=round_bytes_sent,
+                bytes_received=self.round_bytes_received,
+                n_models_received=self.round_n_models_received,
+                compression_ratio=ratio,
+                
+                neighbors_info=neighbors_info,
+                sent_details=round_sent_details,
+                recv_details=self.round_recv_details,
+                
+                round_start_ts=round_start,
+                round_end_ts=time.time(),
+                round_duration_s=round_dur,
+                best_test_acc_so_far=best_acc_so_far,
+                best_test_acc_ts=best_acc_ts,
+                
+                cpu_percent_peak=adv_metrics.get("cpu_avg_pct", 0.0),
+                cpu_percent_mean=adv_metrics.get("cpu_avg_pct", 0.0),
+                ram_usage_gb_peak=adv_metrics.get("rss_peak_kb", 0.0) / (1024 * 1024),
+                ram_usage_gb_mean=adv_metrics.get("rss_avg_kb", 0.0) / (1024 * 1024),
+                battery_level=battery,
+                energy_used_joules=energy_used,
+                gradient_size_mb=orig_size / (1024 * 1024),
+                batch_time_avg_s=adv_metrics.get("batch_time_avg_s", 0.0),
+                
+                rss_baseline_kb=adv_metrics.get("rss_baseline_kb", 0),
+                rss_peak_kb=adv_metrics.get("rss_peak_kb", 0),
+                rss_avg_kb=adv_metrics.get("rss_avg_kb", 0.0),
+                rss_delta_kb=adv_metrics.get("rss_delta_kb", 0),
+                pss_peak_kb=adv_metrics.get("pss_peak_kb", 0),
+                pss_avg_kb=adv_metrics.get("pss_avg_kb", 0.0),
+                uss_peak_kb=adv_metrics.get("uss_peak_kb", 0),
+                uss_avg_kb=adv_metrics.get("uss_avg_kb", 0.0),
+                rss_profile=adv_metrics.get("rss_profile", []),
+                cpu_avg_pct=adv_metrics.get("cpu_avg_pct", 0.0),
+                cpu_max_mhz=adv_metrics.get("cpu_max_mhz", 0.0),
+                cpu_avg_freq_mhz=adv_metrics.get("cpu_avg_freq_mhz", 0.0),
+                throttle_ratio=adv_metrics.get("throttle_ratio", 0.0),
+                ete_seconds=adv_metrics.get("ete_seconds", 0.0),
+                n_samples=adv_metrics.get("n_samples", 0),
+                ipc=adv_metrics.get("ipc", None)
+            )
+
+            # Sauvegarde locale et envoi au manager
+            self._stats.save()
+            self._push_stats_to_manager()
+
+        except Exception as exc:
+            logging.error(f"[Volontaire {self.vol_id}] Erreur lors de l'enregistrement/envoi des stats : {exc}", exc_info=True)
 
 
 # ─── CLI ─────────────────────────────────────────────────────────────────────

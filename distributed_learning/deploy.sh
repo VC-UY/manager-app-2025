@@ -23,8 +23,8 @@ PYTHON="${PYTHON:-$PROJECT_DIR/venv/bin/python}"
 LOG_DIR="${LOG_DIR:-$PROJECT_DIR/logs}"
 
 # ─── Paramètres d'expérience ─────────────────────────────────────────────────
-DATASET="${DATASET:-mnist}"
-DATA_PARTITION="${DATA_PARTITION:-non-iid}"
+DATASET="${DATASET:-cifar10}"
+DATA_PARTITION="${DATA_PARTITION:-iid}"
 COMPRESSION="${COMPRESSION:-quantization}"
 K_NEIGHBORS="${K_NEIGHBORS:-3}"
 GOSSIP_INTERVAL="${GOSSIP_INTERVAL:-60}"

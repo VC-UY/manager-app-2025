@@ -46,15 +46,15 @@ ARGS=(
 [ -n "${NETWORK_MBPS}" ]    && ARGS+=(--network-mbps "$NETWORK_MBPS")
 
 # ─── Export env vars that volunteer.py reads directly from src/config.py ────
-export DATASET="${DATASET:-mnist}"
-export DATA_PARTITION="${DATA_PARTITION:-non-iid}"
+export DATASET="${DATASET:-cifar10}"
+export DATA_PARTITION="${DATA_PARTITION:-iid}"
 export COMPRESSION="${COMPRESSION:-quantization}"
 export K_NEIGHBORS="${K_NEIGHBORS:-3}"
 export GOSSIP_INTERVAL="${GOSSIP_INTERVAL:-60}"
 export GOSSIP_FANOUT="${GOSSIP_FANOUT:-1}"
 export LOCAL_EPOCHS="${LOCAL_EPOCHS:-3}"
 export BATCH_SIZE="${BATCH_SIZE:-32}"
-export LEARNING_RATE="${LEARNING_RATE:-0.01}"
+export LEARNING_RATE="${LEARNING_RATE:-0.001}"
 export NUM_CLASSES="${NUM_CLASSES:-10}"
 export LOG_LEVEL="${LOG_LEVEL:-INFO}"
 export STATS_DIR="${STATS_DIR:-/app/results}"

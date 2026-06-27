@@ -4,15 +4,15 @@ from src.model import create_model
 from src.dataset import load_dataset
 from src.profiler import ModelProfiler
 
-model = create_model("mnist", 10)
+model = create_model("resnet50", 10)
 # run estimation
 profiler = ModelProfiler(model)
 print("Before estimation, finite:", all(torch.isfinite(p).all() for p in model.parameters()))
-needs = profiler.estimate_needs("mnist", 32)
+needs = profiler.estimate_needs("cifar10", 32)
 print("After estimation, finite:", all(torch.isfinite(p).all() for p in model.parameters()))
 
 # load dataset
-train_loader, test_loader = load_dataset("mnist", "./data", 0, 3, "iid", 32)
+train_loader, test_loader = load_dataset("cifar10", "./data", 0, 3, "iid", 32)
 x, y = next(iter(train_loader))
 out = model(x)
 loss = nn.CrossEntropyLoss()(out, y)

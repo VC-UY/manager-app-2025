@@ -19,15 +19,22 @@ from src.profiler import SystemProfiler, ModelProfiler
 
 def run_cli():
     parser = argparse.ArgumentParser(description="Profileur de ressources Système & Modèle")
-    parser.add_argument("--dataset", default="mnist", choices=["mnist", "cifar10"],
-                        help="Nom du dataset (défaut: mnist)")
+    parser.add_argument("--model",    default="resnet50",
+                        choices=["resnet50", "resnet101", "resnet152", "vgg19"],
+                        help="Architecture du modèle (défaut: resnet50)")
+    parser.add_argument("--dataset",  default="cifar10",
+                        choices=["cifar10", "cifar100", "imagenet"],
+                        help="Nom du dataset (défaut: cifar10)")
+    parser.add_argument("--num-classes", type=int, default=0,
+                        help="Nombre de classes (0 = auto depuis dataset)")
     parser.add_argument("--batch-size", type=int, default=32,
                         help="Taille du batch (défaut: 32)")
     parser.add_argument("--epochs", type=int, default=1,
                         help="Nombre d'époques d'entraînement (défaut: 1)")
     parser.add_argument("--optimizer", default="sgd", choices=["sgd", "adam"],
                         help="Type d'optimiseur (défaut: sgd)")
-    parser.add_argument("--compression", default="quantization", choices=["none", "quantization", "sparsification"],
+    parser.add_argument("--compression", default="quantization",
+                        choices=["none", "quantization", "sparsification"],
                         help="Méthode de compression (défaut: quantization)")
     parser.add_argument("--sparsity", type=float, default=0.1,
                         help="Ratio de sparsification (défaut: 0.1)")
@@ -41,11 +48,17 @@ def run_cli():
                         help="Consommation au repos en Watts (défaut: 10.0)")
     args = parser.parse_args()
 
+    # Nombre de classes automatique
+    _nc_map = {"cifar10": 10, "cifar100": 100, "imagenet": 1000}
+    if args.num_classes == 0:
+        args.num_classes = _nc_map.get(args.dataset, 10)
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[*] Initialisation sur le device : {device}")
 
     # Création du modèle
-    model = create_model(args.dataset, 10).to(device)
+    model = create_model(args.model, args.num_classes).to(device)
+    print(f"[*] Modèle : {args.model} | Dataset : {args.dataset} | Classes : {args.num_classes}")
 
     # 1. AVANT L'ENTRAÎNEMENT (Estimation)
     print("\n" + "="*50)
@@ -91,16 +104,13 @@ def run_cli():
     print(" 2. ENTRAÎNEMENT & MONITORING TEMPS RÉEL")
     print("="*50)
     
-    # Créer un mini dataset factice pour simuler l'entraînement rapidement
-    # mnist: 1x28x28, cifar10: 3x32x32
-    channels = 1 if args.dataset == "mnist" else 3
-    height = 28 if args.dataset == "mnist" else 32
-    width = height
-    
-    # Simuler 256 images pour l'entraînement local factice
-    num_samples = 256
+    # Tous les datasets sont redimensionnés à 224×224 dans les transforms
+    channels, height, width = 3, 224, 224
+
+    # Simuler 64 images (réduit car les gros modèles sont lents sur CPU)
+    num_samples = 64
     x_dummy = torch.randn(num_samples, channels, height, width)
-    y_dummy = torch.randint(0, 10, (num_samples,))
+    y_dummy = torch.randint(0, args.num_classes, (num_samples,))
     dummy_dataset = TensorDataset(x_dummy, y_dummy)
     train_loader = DataLoader(dummy_dataset, batch_size=args.batch_size, shuffle=True)
 
