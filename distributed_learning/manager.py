@@ -127,7 +127,8 @@ class Manager:
         srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         srv.settimeout(1.0)
-        srv.bind((MANAGER_HOST, MANAGER_PORT))
+        # On lie à "0.0.0.0" pour écouter sur toutes les interfaces et éviter l'erreur OSError [Errno 99]
+        srv.bind(("0.0.0.0", MANAGER_PORT))
         srv.listen(MAX_CONNECTIONS)
 
         while self._running:

@@ -156,7 +156,7 @@ def _load_cifar10(data_dir: str):
         transform=_cifar_train_transforms(),
     )
     test_ds = torchvision.datasets.CIFAR10(
-        data_dir, train=False, download=True,
+        data_dir, train=True, download=True,
         transform=_cifar_test_transforms(),
     )
     return train_ds, test_ds
@@ -168,7 +168,7 @@ def _load_cifar100(data_dir: str):
         transform=_cifar_train_transforms(),
     )
     test_ds = torchvision.datasets.CIFAR100(
-        data_dir, train=False, download=True,
+        data_dir, train=True, download=True,
         transform=_cifar_test_transforms(),
     )
     return train_ds, test_ds
