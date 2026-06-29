@@ -35,15 +35,15 @@ GOSSIP_FANOUT = int(os.getenv("GOSSIP_FANOUT", "1"))           # nombre de pairs
 # APPRENTISSAGE — LOCAL
 # =============================================================================
 LOCAL_EPOCHS = int(os.getenv("LOCAL_EPOCHS", "3"))
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", "32"))
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", "8"))
 LEARNING_RATE = float(os.getenv("LEARNING_RATE", "0.001"))
 MAX_ROUNDS = int(os.getenv("MAX_ROUNDS", "15"))
 
 # =============================================================================
 # MODÈLE
 # =============================================================================
-# Architectures disponibles : resnet50 | resnet101 | resnet152 | vgg19
-MODEL_NAME = os.getenv("MODEL_NAME", "resnet50").lower()
+# Architectures disponibles : resnet18 | resnet50 | resnet101 | resnet152 | vgg19
+MODEL_NAME = os.getenv("MODEL_NAME", "resnet18").lower()
 
 # =============================================================================
 # DONNÉES

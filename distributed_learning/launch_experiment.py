@@ -65,9 +65,9 @@ def main():
     )
     parser.add_argument("--n-volunteers",     type=int,   default=3,
                         help="Nombre de volontaires (défaut: 3)")
-    parser.add_argument("--model",            default="resnet50",
-                        choices=["resnet50", "resnet101", "resnet152", "vgg19"],
-                        help="Architecture du modèle (défaut: resnet50)")
+    parser.add_argument("--model",            default="resnet18",
+                        choices=["resnet18", "resnet50", "resnet101", "resnet152", "vgg19"],
+                        help="Architecture du modèle (défaut: resnet18)")
     parser.add_argument("--dataset",          default="cifar10",
                         choices=["cifar10", "cifar100", "imagenet"],
                         help="Dataset (défaut: cifar10)")

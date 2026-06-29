@@ -45,6 +45,7 @@ services:
       - GOSSIP_INTERVAL=${GOSSIP_INTERVAL:-60}
       - GOSSIP_FANOUT=${GOSSIP_FANOUT:-1}
       - LOCAL_EPOCHS=${LOCAL_EPOCHS:-3}
+      - MODEL_NAME=${MODEL_NAME:-resnet18}
       - BATCH_SIZE=${BATCH_SIZE:-32}
       - LEARNING_RATE=${LEARNING_RATE:-0.001}
       - NUM_CLASSES=${NUM_CLASSES:-10}
@@ -69,6 +70,9 @@ services:
     # Use host network so the volunteer can reach coordinator/manager
     # and they can reach it by its real IP.
     network_mode: host
+
+    # Shared memory size for PyTorch DataLoader (default is 64MB, which is too small)
+    shm_size: '2gb'
 
     # Disable auto-restart so container stops when training rounds limit is reached
     restart: "no"

@@ -30,7 +30,7 @@ import torchvision.transforms as T
 
 
 # ─── Taille d'entrée standard pour tous les modèles ─────────────────────────
-_INPUT_SIZE = 224   # ResNet / VGG attendent 224×224
+_INPUT_SIZE = 224  # ResNet-50 attend 224×224
 
 # Normalisation ImageNet (utilisée pour les 3 datasets)
 _IMAGENET_MEAN = (0.485, 0.456, 0.406)
@@ -116,13 +116,13 @@ def load_dataset(dataset: str,
 
     train_loader = DataLoader(
         train_subset, batch_size=batch_size,
-        shuffle=True, num_workers=2, pin_memory=True,
-        persistent_workers=True,
+        shuffle=True, num_workers=0, pin_memory=False,
+        persistent_workers=False,
     )
     test_loader = DataLoader(
-        test_ds, batch_size=128,
-        shuffle=False, num_workers=2, pin_memory=True,
-        persistent_workers=True,
+        test_ds, batch_size=32,
+        shuffle=False, num_workers=0, pin_memory=False,
+        persistent_workers=False,
     )
     return train_loader, test_loader
 
@@ -130,21 +130,21 @@ def load_dataset(dataset: str,
 # ─── Chargement par dataset ──────────────────────────────────────────────────
 
 def _cifar_train_transforms() -> T.Compose:
-    """Transformations d'augmentation entraînement pour CIFAR (32→224)."""
+    """Transformations d'augmentation entraînement pour CIFAR (32→224 pour ResNet-50)."""
     return T.Compose([
-        T.Resize(_INPUT_SIZE),                  # 32×32 → 224×224
+        T.Resize(256),                          # 32×32 → 256×256
+        T.RandomCrop(_INPUT_SIZE),              # crop 224×224
         T.RandomHorizontalFlip(),
-        T.RandomCrop(_INPUT_SIZE, padding=28),  # léger recadrage sur 224
         T.ToTensor(),
         T.Normalize(_IMAGENET_MEAN, _IMAGENET_STD),
     ])
 
 
 def _cifar_test_transforms() -> T.Compose:
-    """Transformations test pour CIFAR (32→224, sans augmentation)."""
+    """Transformations test pour CIFAR (32→224 pour ResNet-50, sans augmentation)."""
     return T.Compose([
-        T.Resize(_INPUT_SIZE),
-        T.CenterCrop(_INPUT_SIZE),
+        T.Resize(256),                          # 32×32 → 256×256
+        T.CenterCrop(_INPUT_SIZE),              # crop central 224×224
         T.ToTensor(),
         T.Normalize(_IMAGENET_MEAN, _IMAGENET_STD),
     ])

@@ -3,6 +3,7 @@ Définitions des modèles utilisés par les volontaires pour les expérimentatio
 
 Modèles disponibles
 -------------------
+  - resnet18   : ResNet-18   (~11 M paramètres)  — léger, idéal pour débuter
   - resnet50   : ResNet-50   (~25 M paramètres)
   - resnet101  : ResNet-101  (~44 M paramètres)
   - resnet152  : ResNet-152  (~60 M paramètres)
@@ -15,6 +16,7 @@ ImageNet est déjà en 224×224.
 
 Utilisation :
     from src.model import create_model, model_parameter_bytes
+    model = create_model("resnet18", num_classes=10)
     model = create_model("resnet50", num_classes=10)
     model = create_model("vgg19",    num_classes=100)
 """
@@ -25,10 +27,10 @@ import torch.nn as nn
 import torchvision.models as tv_models
 
 # ─── Registre des modèles supportés ──────────────────────────────────────────
-_SUPPORTED_MODELS = ("resnet50", "resnet101", "resnet152", "vgg19")
+_SUPPORTED_MODELS = ("resnet18", "resnet50", "resnet101", "resnet152", "vgg19")
 
 
-def create_model(model_name: str = "resnet50",
+def create_model(model_name: str = "resnet18",
                  num_classes: int = 10) -> nn.Module:
     """
     Instancie un modèle pré-architecturé (sans poids pré-entraînés)
@@ -47,7 +49,11 @@ def create_model(model_name: str = "resnet50",
     """
     name = model_name.lower().strip()
 
-    if name == "resnet50":
+    if name == "resnet18":
+        model = tv_models.resnet18(weights=None)
+        model.fc = nn.Linear(model.fc.in_features, num_classes)
+
+    elif name == "resnet50":
         model = tv_models.resnet50(weights=None)
         model.fc = nn.Linear(model.fc.in_features, num_classes)
 
