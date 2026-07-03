@@ -24,6 +24,7 @@ from .models import User
 
 
 class WorkflowViewSet(viewsets.ModelViewSet):
+    queryset = Workflow.objects.all()
     serializer_class = WorkflowSerializer
     permission_classes = [IsAuthenticated]
 

@@ -12,7 +12,7 @@ from .views import (
 from .submit_dispatcher import submit_workflow_dispatcher
 
 router = DefaultRouter()
-router.register(r'', WorkflowViewSet)
+router.register(r'', WorkflowViewSet, basename='workflow')
 
 urlpatterns = [
     path('auth/register/', RegisterView.as_view(), name='user-register'),

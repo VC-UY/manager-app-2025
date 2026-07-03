@@ -29,10 +29,16 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 30m
           script: |
             set -euo pipefail
             cd /opt/vc-uy
             docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production build manager-backend manager-frontend
             docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production up -d manager-backend manager-frontend
-            docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production exec -T manager-backend python manage.py migrate --noinput || true
-            curl -sf http://127.0.0.1:8002/health/ && echo "Manager OK"
+            docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production exec -T manager-backend python manage.py migrate --noinput
+            for i in 1 2 3 4 5 6; do
+              curl -sf -H "Host: localhost" http://127.0.0.1:8002/health/ && break
+              sleep 10
+            done
+            curl -sf -H "Host: localhost" http://127.0.0.1:8002/health/
+            echo "Manager OK"
