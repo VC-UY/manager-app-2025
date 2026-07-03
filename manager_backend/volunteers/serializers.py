@@ -74,3 +74,31 @@ class TaskSerializer(serializers.ModelSerializer):
     class Meta:
         model = Task
         fields = '__all__'
+
+class VolunteerTaskDetailSerializer(serializers.ModelSerializer):
+    """
+    Sérialiseur détaillé pour VolunteerTask avec toutes les informations de la tâche.
+    Utilisé pour permettre aux volontaires de récupérer leurs tâches via HTTP.
+    """
+    task_id = serializers.CharField(source='task.id', read_only=True)
+    task_name = serializers.CharField(source='task.name', read_only=True)
+    workflow_id = serializers.CharField(source='task.workflow.id', read_only=True)
+    workflow_name = serializers.CharField(source='task.workflow.name', read_only=True)
+    parameters = serializers.JSONField(source='task.parameters', read_only=True)
+    dependencies = serializers.SerializerMethodField()
+    task_status = serializers.CharField(source='task.status', read_only=True)
+
+    class Meta:
+        model = VolunteerTask
+        fields = [
+            'id', 'task_id', 'task_name', 'workflow_id', 'workflow_name',
+            'parameters', 'dependencies', 'status', 'task_status',
+            'assigned_at', 'started_at', 'completed_at', 'progress',
+            'result', 'error'
+        ]
+
+    def get_dependencies(self, obj):
+        """Retourne les IDs des tâches dont cette tâche dépend."""
+        if obj.task and hasattr(obj.task, 'dependencies'):
+            return list(obj.task.dependencies.values_list('id', flat=True))
+        return []

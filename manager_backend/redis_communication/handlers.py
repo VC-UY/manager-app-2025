@@ -396,7 +396,7 @@ def handle_task_assignment_response_wrapper(channel: str, message: Message):
     """
     Wrapper pour le gestionnaire de réponses aux demandes de réassignation de tâches.
     Importe le gestionnaire réel à partir du module tasks.reassignment_handlers.
-    
+
     Args:
         channel: Canal sur lequel le message a été reçu
         message: Message reçu
@@ -410,13 +410,259 @@ def handle_task_assignment_response_wrapper(channel: str, message: Message):
         logger.error(traceback.format_exc())
         return False
 
+
+def handle_task_progress(channel: str, message: Message):
+    """
+    Handler pour les mises à jour de progression des tâches.
+    Reçoit les progressions depuis le coordinateur et met à jour la base locale + WebSocket.
+    """
+    try:
+        data = message.data
+        task_id = data.get('task_id')
+        workflow_id = data.get('workflow_id')
+        progress = data.get('progress', 0)
+        volunteer_id = data.get('volunteer_id')
+
+        if not task_id:
+            logger.warning("task/progress reçu sans task_id")
+            return
+
+        logger.info(f"[task/progress] Tâche {task_id}: {progress}% (volontaire: {volunteer_id})")
+
+        # Mettre à jour la base de données locale
+        try:
+            from tasks.models import Task
+            task = Task.objects.filter(id=task_id).first()
+            if task:
+                task.progress = progress
+                task.save(update_fields=['progress'])
+        except Exception as db_error:
+            logger.error(f"Erreur mise à jour DB pour task {task_id}: {db_error}")
+
+        # Notifier via WebSocket
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+
+            channel_layer = get_channel_layer()
+            if channel_layer:
+                async_to_sync(channel_layer.group_send)(
+                    "workflow_updates",
+                    {
+                        "type": "task_progress",
+                        "task_id": task_id,
+                        "workflow_id": workflow_id,
+                        "progress": progress,
+                        "volunteer": volunteer_id,
+                        "message": f"Progression: {progress}%",
+                        "timestamp": data.get('timestamp')
+                    }
+                )
+                logger.info(f"WebSocket notification envoyée pour task {task_id}")
+        except Exception as ws_error:
+            logger.error(f"Erreur WebSocket pour task {task_id}: {ws_error}")
+
+    except Exception as e:
+        logger.error(f"Erreur dans handle_task_progress: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+
+
+def handle_task_status_update(channel: str, message: Message):
+    """
+    Handler pour les mises à jour de statut des tâches (completed, failed, etc.).
+    """
+    try:
+        data = message.data
+        task_id = data.get('task_id')
+        workflow_id = data.get('workflow_id')
+        status = data.get('status', '').lower()
+        volunteer_id = data.get('volunteer_id')
+
+        if not task_id:
+            logger.warning("task/status reçu sans task_id")
+            return
+
+        logger.info(f"[task/status] Tâche {task_id}: statut={status} (volontaire: {volunteer_id})")
+
+        # Mettre à jour la base de données locale
+        try:
+            from tasks.models import Task
+            from workflows.models import Workflow
+
+            task = Task.objects.filter(id=task_id).first()
+            if task:
+                # Mapper les statuts
+                status_map = {
+                    'completed': 'COMPLETED',
+                    'failed': 'FAILED',
+                    'error': 'FAILED',
+                    'running': 'RUNNING',
+                    'progress': 'RUNNING',
+                    'paused': 'PAUSED',
+                    'cancel': 'CANCELLED',
+                }
+                task.status = status_map.get(status, status.upper())
+                
+                # Si la tâche est terminée, forcer la progression à 100%
+                if task.status == 'COMPLETED':
+                    task.progress = 100.0
+                    task.save(update_fields=['status', 'progress'])
+                else:
+                    task.save(update_fields=['status'])
+
+                # Si completed, mettre à jour le workflow si toutes les tâches sont terminées
+                if status == 'completed' and workflow_id:
+                    workflow = Workflow.objects.filter(workflow_id=workflow_id).first()
+                    if workflow:
+                        all_tasks = Task.objects.filter(workflow=workflow)
+                        completed_count = all_tasks.filter(status='COMPLETED').count()
+                        total_count = all_tasks.count()
+
+                        if completed_count == total_count:
+                            workflow.status = 'COMPLETED'
+                            workflow.save(update_fields=['status'])
+                            logger.info(f"Workflow {workflow_id} marqué comme COMPLETED")
+
+        except Exception as db_error:
+            logger.error(f"Erreur mise à jour DB pour task {task_id}: {db_error}")
+
+        # Notifier via WebSocket
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+
+            channel_layer = get_channel_layer()
+            if channel_layer:
+                async_to_sync(channel_layer.group_send)(
+                    "workflow_updates",
+                    {
+                        "type": "task_status_change",
+                        "task_id": task_id,
+                        "workflow_id": workflow_id,
+                        "status": status,
+                        "volunteer": volunteer_id,
+                        "message": f"Statut: {status}",
+                        "timestamp": data.get('timestamp')
+                    }
+                )
+        except Exception as ws_error:
+            logger.error(f"Erreur WebSocket pour task {task_id}: {ws_error}")
+
+    except Exception as e:
+        logger.error(f"Erreur dans handle_task_status_update: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+
+
+def handle_task_files_ready(channel: str, message: Message):
+    """
+    Handler pour les notifications de fichiers de sortie prêts.
+    Télécharge les fichiers depuis le coordinateur vers le manager.
+    """
+    import requests
+    import os
+
+    try:
+        data = message.data
+        task_id = data.get('task_id')
+        workflow_id = data.get('workflow_id')
+        files = data.get('files', [])
+        file_server = data.get('file_server', {})
+
+        if not task_id or not files:
+            logger.warning("task_files sans task_id ou files")
+            return
+
+        logger.info(f"[task_files] Fichiers prêts pour tâche {task_id}: {files}")
+
+        # Créer le répertoire de destination
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        output_dir = os.path.join(base_dir, 'workflows', 'outputs', str(workflow_id), str(task_id))
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Télécharger les fichiers depuis le coordinateur
+        coordinator_host = file_server.get('coordinator_host', 'localhost')
+        coordinator_port = file_server.get('coordinator_port', 8001)
+        path = file_server.get('path', f'/api/task-outputs/{task_id}/')
+
+        downloaded = []
+        for filename in files:
+            try:
+                url = f"http://{coordinator_host}:{coordinator_port}{path}{filename}"
+                logger.info(f"Téléchargement de {url}")
+
+                response = requests.get(url, timeout=60, stream=True)
+                if response.status_code == 200:
+                    local_path = os.path.join(output_dir, filename)
+                    with open(local_path, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                    downloaded.append(filename)
+                    logger.info(f"Fichier {filename} téléchargé: {local_path}")
+                else:
+                    logger.warning(f"Échec téléchargement {filename}: HTTP {response.status_code}")
+
+            except Exception as e:
+                logger.error(f"Erreur téléchargement {filename}: {e}")
+
+        # Mettre à jour la tâche avec les fichiers de sortie
+        if downloaded:
+            try:
+                from tasks.models import Task
+                task = Task.objects.filter(id=task_id).first()
+                if task:
+                    task.output_files = downloaded
+                    task.output_directory = output_dir
+                    task.save(update_fields=['output_files', 'output_directory'])
+                    logger.info(f"Tâche {task_id} mise à jour avec {len(downloaded)} fichiers")
+            except Exception as db_error:
+                logger.error(f"Erreur mise à jour DB: {db_error}")
+
+        # Notifier via WebSocket
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+
+            channel_layer = get_channel_layer()
+            if channel_layer:
+                async_to_sync(channel_layer.group_send)(
+                    "workflow_updates",
+                    {
+                        "type": "task_update",
+                        "task": {
+                            "task_id": task_id,
+                            "workflow_id": workflow_id,
+                            "output_files": downloaded,
+                            "output_directory": output_dir
+                        },
+                        "action": "files_ready",
+                        "timestamp": data.get('timestamp')
+                    }
+                )
+        except Exception as ws_error:
+            logger.error(f"Erreur WebSocket: {ws_error}")
+
+    except Exception as e:
+        logger.error(f"Erreur dans handle_task_files_ready: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+
+
 # Dictionnaire des gestionnaires par défaut
 DEFAULT_HANDLERS = {
     # Canaux génériques
     "coord/heartbeat": heartbeat_handler,
     "coord/emergency": error_handler,
     "system/error": error_handler,
-    
+
     # Canaux de réassignation de tâches
     "task/assignment/response": lambda channel, message: handle_task_assignment_response_wrapper(channel, message),
+
+    # Canaux de progression et statut des tâches
+    "task/progress": handle_task_progress,
+    "task/status": handle_task_status_update,
+
+    # Canal pour les fichiers de sortie
+    "manager/task_files": handle_task_files_ready,
 }

@@ -53,33 +53,7 @@ export default function WorkflowsPage() {
       } catch (err: any) {
         console.error('Erreur:', err);
         setError(err.message || 'Une erreur est survenue');
-        
-        setWorkflows([
-          {
-            id: 'test-1',
-            name: 'Analyse des données clients',
-            description: 'Ce workflow analyse les données clients pour générer des insights marketing',
-            workflow_type: 'ANALYTICS',
-            status: 'RUNNING',
-            created_at: new Date().toISOString()
-          },
-          {
-            id: 'test-2',
-            name: 'Génération de rapports mensuels',
-            description: 'Automatisation de la création et distribution des rapports',
-            workflow_type: 'REPORTING',
-            status: 'COMPLETED',
-            created_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-          },
-          {
-            id: 'test-3',
-            name: 'Import des données fournisseurs',
-            description: 'Workflow d\'intégration et normalisation des données',
-            workflow_type: 'INTEGRATION',
-            status: 'FAILED',
-            created_at: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
-          }
-        ]);
+        setWorkflows([]);
       } finally {
         setLoading(false);
       }

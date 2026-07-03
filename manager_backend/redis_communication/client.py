@@ -193,6 +193,18 @@ class RedisClient:
                 
         logger.info(f"Publication d'un message de type '{message_type}' sur le canal {channel}")
         
+        # Tenter de récupérer le token automatiquement si non fourni
+        if not token:
+            try:
+                from redis_communication.utils import get_manager_login_token
+                token = get_manager_login_token()
+                logger.debug(f"Token récupéré automatiquement pour le canal {channel}")
+            except Exception as e:
+                # Si on ne peut pas récupérer le token (e.g. pas connecté), on continue sans token
+                # Cela permet aux messages sur des canaux publics de passer
+                logger.debug(f"Impossible de récupérer le token automatiquement: {e}")
+                pass
+
         # Créer un message standardisé
         message = Message(
             request_id=request_id or str(uuid.uuid4()),
@@ -204,7 +216,7 @@ class RedisClient:
             data=message_data
         )
         
-        # Ajouter le token JWT si fourni
+        # Ajouter le token JWT si fourni (ou récupéré)
         if token:
             message.token = token
             logger.info(f"Token JWT ajouté au message pour le canal {channel}")
@@ -213,12 +225,10 @@ class RedisClient:
         try:
             # Log pour déboguer le problème de sérialisation
             json_message = message.to_json()
-            logger.info(f"Message sérialisé pour {channel}: {json_message}")
-            
-            # Augmenter la taille maximale du message si nécessaire
-            if len(json_message) > int(self.redis.config_get('proto-max-bulk-len').get('proto-max-bulk-len', 512 * 1024)):
-                self.redis.config_set('proto-max-bulk-len', len(json_message) + 9097152)
-            
+            # logger.info(f"Message sérialisé pour {channel}: {json_message}")
+
+            # Note: config_get/config_set supprimés car non supportés par le proxy Redis custom
+
             self.redis.publish(channel, json_message)
             self.stats['messages_sent'] += 1
             self.stats['last_activity'] = time.time()

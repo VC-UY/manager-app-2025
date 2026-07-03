@@ -200,34 +200,43 @@ def submit_workflow_handler(workflow_id: str, callback: Optional[Callable[[Dict[
                 logger.info(f"Réponse trouvée pour la requête {request_id}: {response}")
                 # Supprimer la réponse du fichier
                 delete_response(request_id)
-                
+
                 # Vérifier le statut
                 response_data = response.get('response', {})
                 status = response_data.get('status')
                 logger.info(f"Statut de la réponse: {status}")
-                
+
                 if status == 'success':
                     logger.info(f"Enregistrement réussi pour {workflow_id}")
                     return True, response_data
                 else:
                     logger.info(f"Enregistrement échoué pour {workflow_id}")
                     return False, response_data
-        
+            time.sleep(0.5)  # Petite pause pour éviter de surcharger le CPU
+
+        # Timeout atteint sans réponse
+        logger.error(f"Timeout atteint pour la requête {request_id} (workflow {workflow_id})")
+        client.unsubscribe('workflow/submit_response', handle_response)
+        return False, {
+            'status': 'error',
+            'message': f'Timeout: aucune réponse du coordinateur après {timeout} secondes'
+        }
+
     except Workflow.DoesNotExist:
         logger.error(f"Workflow {workflow_id} non trouvé")
-        return {
+        return False, {
             'status': 'error',
             'message': 'Workflow non trouvé'
         }
     except NoLoginError:
         logger.error("Le fichier .manager/manager_login_info.json n'a pas été trouvé. Veuillez vous connecter.")
-        return {
+        return False, {
             'status': 'error',
             'message': 'Le fichier .manager/manager_login_info.json n\'a pas été trouvé. Veuillez vous connecter.'
         }
     except Exception as e:
         logger.error(f"Erreur lors de la soumission du workflow {workflow_id}: {e}")
-        return {
+        return False, {
             'status': 'error',
             'message': f'Erreur lors de la soumission: {str(e)}'
         }

@@ -14,7 +14,7 @@ NC='\033[0m'
 
 # Configuration
 COORDINATOR_IP="173.249.38.251"  # IP du serveur coordinator déployé
-COORDINATOR_PORT="80"
+COORDINATOR_PORT="80"répertoire
 BACKEND_PORT="8002"
 FRONTEND_PORT="3000"
 
@@ -22,7 +22,7 @@ echo -e "${GREEN}======================================================${NC}"
 echo -e "${GREEN}    Application Manager - Installation Automatique${NC}"
 echo -e "${GREEN}======================================================${NC}\n"
 
-# Obtenir le répertoire du script (qui est maintenant dans manager-app-2025/)
+# Obtenir le  du script (qui est maintenant dans manager-app-2025/)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MANAGER_DIR="$SCRIPT_DIR"
 VENV_DIR="$SCRIPT_DIR/venv"
@@ -304,6 +304,31 @@ fi
 
 pip install --upgrade pip setuptools wheel
 pip install --upgrade -r requirements.txt
+
+# Vérifier et installer PyTorch CPU-only si nécessaire
+echo -e "${YELLOW}Vérification de PyTorch...${NC}"
+if ! python3 -c "import torch" 2>/dev/null; then
+    echo -e "${YELLOW}PyTorch n'est pas installé. Installation de la version CPU-only...${NC}"
+
+    # Corriger les permissions du venv si nécessaire
+    if [ "$EUID" -eq 0 ] && [ -n "$SUDO_USER" ]; then
+        echo -e "${YELLOW}Correction des permissions de l'environnement virtuel...${NC}"
+        chown -R "$SUDO_USER:$SUDO_USER" "$VENV_DIR"
+    fi
+
+    # Installer PyTorch CPU-only (plus léger, ~200 MB au lieu de 2.3 GB)
+    # Utiliser extra-index-url pour avoir un fallback sur PyPI
+    echo -e "${YELLOW}Installation de PyTorch CPU-only depuis PyPI...${NC}"
+    pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cpu || {
+        echo -e "${YELLOW}Index CPU non accessible, installation depuis PyPI standard (version CPU)...${NC}"
+        pip install torch torchvision torchaudio
+    }
+    echo -e "${GREEN}PyTorch installé avec succès${NC}"
+else
+    echo -e "${GREEN}PyTorch est déjà installé${NC}"
+    TORCH_VERSION=$(python3 -c "import torch; print(torch.__version__)")
+    echo -e "${GREEN}Version: $TORCH_VERSION${NC}"
+fi
 
 echo -e "\n${GREEN}=== Installation des dépendances Node.js ===${NC}\n"
 

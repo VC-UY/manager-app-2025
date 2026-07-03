@@ -156,77 +156,20 @@ def process_workflow_submission(workflow_id):
                     # Assigner les tâches
                     assignment_result = assign_workflow_to_volunteers(workflow, volunteers)
                     thread_logger.info(f"Résultat de l'assignation: {assignment_result}")
-                    
-                    # Préparer les informations du serveur de fichiers pour chaque tâche
-                    file_server_info = {
-                        'base_url': file_server_url,
-                        'workflow_id': str(workflow_id)
-                    }
-                    
-                    # Préparer les données d'assignation pour les volontaires
-                    assignments_by_volunteer = {}
-                    
-                    # Parcourir les assignations et les regrouper par volontaire
-                    for task_id, volunteer_id in assignment_result.get('assignments', {}).items():
-                        if volunteer_id not in assignments_by_volunteer:
-                            assignments_by_volunteer[volunteer_id] = []
-                        
-                        # Récupérer la tâche
-                        from tasks.models import Task
-                        task = Task.objects.get(id=task_id)
-                        
-                        # Préparer les informations de fichiers d'entrée
-                        input_files = []
-                        if task.input_files:
-                            for file_path in task.input_files:
-                                input_files.append({
-                                    'path': file_path,
-                                    'size': 0  
-                                })
-                        
-                        # Créer les données de la tâche pour ce volontaire
-                        task_data = {
-                            'task_id': str(task.id),
-                            'name': task.name,
-                            'parameters': task.parameters,
-                            'input_data': {
-                                'files': input_files,
-                                'file_server': file_server_info
-                            },
-                            'estimated_execution_time': task.estimated_max_time,
-                            'docker_information': task.docker_info or {}
-                        }
-                        
-                        assignments_by_volunteer[volunteer_id].append(task_data)
-                    
-                    # Envoyer les assignations aux volontaires
-                    redis_client = RedisClient.get_instance()
-                    for volunteer_id, tasks_data in assignments_by_volunteer.items():
-                        thread_logger.info(f"Envoi de {len(tasks_data)} tâches au volontaire {volunteer_id}")
-                        
-                        # Préparer le message d'assignation
-                        assignment_message = {
-                            'workflow_id': str(workflow_id),
-                            'assignments': {
-                                volunteer_id: tasks_data
-                            }
-                        }
-                        
-                        # Publier le message d'assignation
-                        redis_client.publish('task/assignment', assignment_message)
-                    
-                    # Notifier la fin de l'assignation
-                    notify_event('workflow_status_change', {
-                        'workflow_id': str(workflow_id),
-                        'status': 'ASSIGNED',
-                        'message': 'Tâches attribuées avec succès'
-                    })
 
-                    # Démarrer le serveur de fichiers local pour servir les fichiers d'entrée
-                    thread_logger.info(f"Démarrage du serveur de fichiers local")
-                    from tasks.file_server import start_file_server
-                    file_server_port = start_file_server(workflow)
-                    thread_logger.info(f"Serveur de fichiers démarré sur le port {file_server_port}")
+                    # Vérifier si des tâches ont été assignées
+                    if not assignment_result:
+                        thread_logger.warning("Aucune tâche n'a été assignée aux volontaires")
+                        notify_event('workflow_status_change', {
+                            'workflow_id': str(workflow_id),
+                            'status': 'ASSIGNMENT_FAILED',
+                            'message': 'Aucune tâche assignée aux volontaires'
+                        })
+                        return
+
+                    # Utiliser le serveur de fichiers déjà démarré (server_port)
+                    file_server_port = server_port
+                    thread_logger.info(f"Utilisation du serveur de fichiers sur le port {file_server_port}")
                     
                     # Préparer les informations de tâches complètes pour chaque volontaire
                     thread_logger.info(f"Préparation des informations de tâches pour chaque volontaire")
@@ -301,6 +244,21 @@ def process_workflow_submission(workflow_id):
                         get_manager_login_token(),
                         'request'
                     )
+
+                    # Compter les tâches assignées
+                    total_tasks_assigned = sum(len(tasks) for tasks in enriched_assignments.values())
+                    thread_logger.info(f"Publication réussie: {total_tasks_assigned} tâches envoyées à {len(enriched_assignments)} volontaires")
+
+                    # Mettre à jour le statut du workflow à PENDING (en attente d'exécution)
+                    workflow.status = WorkflowStatus.PENDING
+                    workflow.save()
+
+                    # Notifier la fin de l'assignation
+                    notify_event('workflow_status_change', {
+                        'workflow_id': str(workflow_id),
+                        'status': 'PENDING',
+                        'message': f'{total_tasks_assigned} tâches attribuées à {len(enriched_assignments)} volontaires'
+                    })
                 else:
                     thread_logger.info(f"Aucun volontaire reçu, lancement de l'écoute sur le canal d'assignment")
                     
@@ -523,8 +481,131 @@ class LogoutView(APIView):
             if request.auth and hasattr(request.auth, 'delete'):
                 request.auth.delete()
                 print(f"[DEBUG] Token supprimé pour l'utilisateur: {request.user.email}")
-            
+
             return Response({"success": "Déconnexion réussie"}, status=status.HTTP_200_OK)
         except Exception as e:
             print(f"[ERROR] Erreur lors de la déconnexion: {str(e)}")
             return Response({"error": "Erreur lors de la déconnexion"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+def get_workflow_outputs(request, workflow_id):
+    """
+    Récupère la liste des fichiers de sortie d'un workflow.
+    """
+    import os
+
+    try:
+        workflow = get_object_or_404(Workflow, id=workflow_id)
+
+        if not workflow.output_path or not os.path.exists(workflow.output_path):
+            return JsonResponse({'files': [], 'message': 'Aucun fichier de sortie'}, status=200)
+
+        # Lister tous les fichiers dans le répertoire de sortie
+        files = []
+        for root, dirs, filenames in os.walk(workflow.output_path):
+            for filename in filenames:
+                file_path = os.path.join(root, filename)
+                relative_path = os.path.relpath(file_path, workflow.output_path)
+                files.append({
+                    'name': filename,
+                    'path': relative_path,
+                    'size': os.path.getsize(file_path),
+                    'modified': os.path.getmtime(file_path)
+                })
+
+        return JsonResponse({
+            'files': files,
+            'output_path': workflow.output_path,
+            'workflow_id': str(workflow.id),
+            'workflow_name': workflow.name,
+            'status': workflow.status
+        }, status=200)
+
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des fichiers de sortie: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@api_view(['GET'])
+def download_workflow_output(request, workflow_id, file_path):
+    """
+    Télécharge un fichier de sortie d'un workflow.
+    """
+    import os
+    from django.http import FileResponse, Http404
+
+    try:
+        workflow = get_object_or_404(Workflow, id=workflow_id)
+
+        if not workflow.output_path:
+            raise Http404("Chemin de sortie non défini")
+
+        # Construire le chemin complet du fichier
+        full_path = os.path.join(workflow.output_path, file_path)
+
+        # Vérifier que le fichier existe et est dans le répertoire de sortie (sécurité)
+        if not os.path.exists(full_path):
+            raise Http404("Fichier non trouvé")
+
+        # Vérifier que le chemin est bien dans le répertoire de sortie (éviter path traversal)
+        if not os.path.realpath(full_path).startswith(os.path.realpath(workflow.output_path)):
+            raise Http404("Accès non autorisé")
+
+        # Renvoyer le fichier
+        response = FileResponse(open(full_path, 'rb'), as_attachment=True, filename=os.path.basename(file_path))
+        return response
+
+    except Http404:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur lors du téléchargement du fichier: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@api_view(['GET'])
+def download_workflow_outputs_zip(request, workflow_id):
+    """
+    Télécharge tous les fichiers de sortie d'un workflow dans une archive ZIP.
+    """
+    import os
+    import zipfile
+    import tempfile
+    from django.http import FileResponse, Http404
+
+    try:
+        workflow = get_object_or_404(Workflow, id=workflow_id)
+
+        if not workflow.output_path or not os.path.exists(workflow.output_path):
+            raise Http404("Aucun fichier de sortie")
+
+        # Créer un fichier ZIP temporaire
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.zip')
+
+        with zipfile.ZipFile(temp_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for root, dirs, files in os.walk(workflow.output_path):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, workflow.output_path)
+                    zf.write(file_path, arcname)
+
+        temp_file.close()
+
+        # Renvoyer le fichier ZIP
+        zip_filename = f"{workflow.name.replace(' ', '_')}_outputs.zip"
+        response = FileResponse(
+            open(temp_file.name, 'rb'),
+            as_attachment=True,
+            filename=zip_filename
+        )
+
+        # Nettoyer le fichier temporaire après l'envoi
+        response.file_to_stream.close_callback = lambda: os.unlink(temp_file.name)
+
+        return response
+
+    except Http404:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur lors de la création de l'archive ZIP: {e}")
+        return JsonResponse({'error': str(e)}, status=500)

@@ -1,16 +1,7 @@
+from _typeshed import SupportsWrite
 from collections.abc import Callable
 from types import TracebackType
-from typing import (
-    Any,
-    Final,
-    Literal,
-    TypeAlias,
-    TypedDict,
-    TypeVar,
-    type_check_only,
-)
-
-from _typeshed import SupportsWrite
+from typing import Any, Final, Literal, TypeAlias, TypedDict, TypeVar, type_check_only
 
 __all__ = [
     "seterr",
@@ -65,11 +56,11 @@ class errstate:
     ) -> None: ...
 
 def seterr(
-    all: _ErrKind | None = ...,
-    divide: _ErrKind | None = ...,
-    over: _ErrKind | None = ...,
-    under: _ErrKind | None = ...,
-    invalid: _ErrKind | None = ...,
+    all: _ErrKind | None = None,
+    divide: _ErrKind | None = None,
+    over: _ErrKind | None = None,
+    under: _ErrKind | None = None,
+    invalid: _ErrKind | None = None,
 ) -> _ErrDict: ...
 def geterr() -> _ErrDict: ...
 def setbufsize(size: int) -> int: ...
