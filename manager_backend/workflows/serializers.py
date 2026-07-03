@@ -153,28 +153,37 @@ class RegisterSerializer(serializers.ModelSerializer):
 
             def sync_coordinator():
                 try:
-                    success, response = register_manager(
+                    from workflows.coordinator_sync import sync_manager_to_coordinator
+                    from workflows.models import User as UserModel
+
+                    success, response = sync_manager_to_coordinator(
                         username=user.username,
                         email=user.email,
                         password=password_plain,
                         first_name=validated_data.get('first_name', ''),
                         last_name=validated_data.get('last_name', ''),
-                        timeout=8,
                     )
                     if not success:
+                        # Fallback Redis historique
+                        success, response = register_manager(
+                            username=user.username,
+                            email=user.email,
+                            password=password_plain,
+                            first_name=validated_data.get('first_name', ''),
+                            last_name=validated_data.get('last_name', ''),
+                            timeout=8,
+                        )
+                    if not success:
                         logger.warning(
-                            f"Synchronisation coordinateur differee echouee: {response.get('message', 'erreur')}"
+                            "Synchronisation coordinateur echouee: %s",
+                            response.get('message', response),
                         )
                         return
-                    from workflows.models import User as UserModel
                     db_user = UserModel.objects.get(pk=user.id)
                     remote_id = response.get('manager_id')
                     if remote_id:
                         db_user.remote_id = remote_id
-                    token = response.get('token')
-                    if token:
-                        db_user.coordinator_token = token
-                    db_user.save(update_fields=['remote_id', 'coordinator_token'])
+                        db_user.save(update_fields=['remote_id'])
                 except Exception as sync_error:
                     logger.error(f"Synchronisation coordinateur en arriere-plan: {sync_error}")
 

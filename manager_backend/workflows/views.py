@@ -456,17 +456,20 @@ class LoginView(APIView):
 
                     def _sync_coordinator_login():
                         try:
-                            from redis_communication.auth_client import login_manager
+                            from workflows.coordinator_sync import sync_manager_to_coordinator
                             from workflows.models import User as UserModel
-                            coord_ok, coord_data = login_manager(user.username, password, timeout=8)
-                            if not coord_ok:
-                                return
-                            db_user = UserModel.objects.get(pk=user.pk)
-                            if coord_data.get('token'):
-                                db_user.coordinator_token = coord_data['token']
-                            if coord_data.get('manager_id'):
-                                db_user.remote_id = coord_data['manager_id']
-                            db_user.save(update_fields=['coordinator_token', 'remote_id'])
+
+                            ok, data = sync_manager_to_coordinator(
+                                username=user.username,
+                                email=user.email,
+                                password=password,
+                                first_name=user.first_name or '',
+                                last_name=user.last_name or '',
+                            )
+                            if ok and data.get('manager_id'):
+                                db_user = UserModel.objects.get(pk=user.pk)
+                                db_user.remote_id = data['manager_id']
+                                db_user.save(update_fields=['remote_id'])
                         except Exception as sync_err:
                             print(f"[WARN] Synchronisation coordinateur: {sync_err}")
 
