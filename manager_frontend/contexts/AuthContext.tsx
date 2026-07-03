@@ -67,16 +67,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await authService.login({ email, password });
       console.log('[Auth] Connexion réussie:', data);
       
-      if (data && data.user) {
+      if (data?.user && data?.token) {
         setUser(data.user);
-        
-        // Ajouter un délai avant la redirection
-        setTimeout(() => {
-          console.log('[Auth] Redirection vers les workflows');
-          router.push('/workflows');
-        }, 300);
+        router.replace('/workflows');
       } else {
-        throw new Error('Réponse du serveur invalide');
+        throw new Error('Reponse du serveur invalide');
       }
     } catch (error: any) {
       console.error('[Auth] Erreur de connexion:', error);
@@ -121,16 +116,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       console.log('[Auth] Inscription réussie:', data);
       
-      if (data && data.user) {
+      if (data?.user && data?.token) {
         setUser(data.user);
-        
-        // Ajouter un délai avant la redirection
-        setTimeout(() => {
-          console.log('[Auth] Redirection vers les workflows');
-          router.push('/workflows');
-        }, 300);
+        router.replace('/workflows');
       } else {
-        throw new Error('Réponse du serveur invalide');
+        throw new Error('Reponse du serveur invalide');
       }
     } catch (error: any) {
       console.error('[Auth] Erreur d\'inscription:', error);

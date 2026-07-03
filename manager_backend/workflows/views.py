@@ -451,18 +451,27 @@ class LoginView(APIView):
                     token, created = Token.objects.get_or_create(user=user)
                     print(f"[DEBUG] Connexion réussie pour: {user.email}, Token: {token.key}")
 
-                    try:
-                        from redis_communication.auth_client import login_manager
-                        coord_ok, coord_data = login_manager(user.username, password, timeout=30)
-                        if coord_ok:
+                    # Ne pas bloquer la reponse HTTP sur le coordinateur
+                    import threading
+
+                    def _sync_coordinator_login():
+                        try:
+                            from redis_communication.auth_client import login_manager
+                            from workflows.models import User as UserModel
+                            coord_ok, coord_data = login_manager(user.username, password, timeout=8)
+                            if not coord_ok:
+                                return
+                            db_user = UserModel.objects.get(pk=user.pk)
                             if coord_data.get('token'):
-                                user.coordinator_token = coord_data['token']
+                                db_user.coordinator_token = coord_data['token']
                             if coord_data.get('manager_id'):
-                                user.remote_id = coord_data['manager_id']
-                            user.save()
-                    except Exception as sync_err:
-                        print(f"[WARN] Synchronisation coordinateur: {sync_err}")
-                    
+                                db_user.remote_id = coord_data['manager_id']
+                            db_user.save(update_fields=['coordinator_token', 'remote_id'])
+                        except Exception as sync_err:
+                            print(f"[WARN] Synchronisation coordinateur: {sync_err}")
+
+                    threading.Thread(target=_sync_coordinator_login, daemon=True).start()
+
                     return Response({
                         'token': token.key,
                         'user': {

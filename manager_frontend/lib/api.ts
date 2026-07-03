@@ -1,6 +1,15 @@
 // lib/api.ts
 import axios from 'axios';
 
+const TOKEN_KEY = 'token';
+const USER_KEY = 'user';
+
+function getCookie(name: string): string | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 function setAuthCookie(token: string) {
   if (typeof document !== 'undefined') {
     document.cookie = `manager_token=${token}; path=/; max-age=86400; SameSite=Lax`;
@@ -13,9 +22,32 @@ function clearAuthCookie() {
   }
 }
 
+function getAuthToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(TOKEN_KEY) || getCookie('manager_token');
+}
+
+function persistAuth(token: string, user: unknown) {
+  localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
+  setAuthCookie(token);
+}
+
+function clearAuth() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+  clearAuthCookie();
+}
+
+// En navigateur: meme origine. En SSR/dev: URL explicite.
+const apiBase =
+  typeof window !== 'undefined'
+    ? ''
+    : process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002';
+
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002',
-  timeout: 60000,
+  baseURL: apiBase,
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -24,58 +56,31 @@ const api = axios.create({
 // Intercepteur pour ajouter le token d'authentification
 api.interceptors.request.use(
   (config) => {
-    if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('token');
-      if (token) {
-        config.headers.Authorization = `Token ${token}`;
-      }
+    const token = getAuthToken();
+    if (token) {
+      config.headers = config.headers || {};
+      config.headers.Authorization = `Token ${token}`;
     }
-    
-    // Log pour débogage (sans afficher les mots de passe)
-    console.log(`[API] Requête ${config.method?.toUpperCase()} ${config.url}:`, {
-      headers: { ...config.headers, Authorization: config.headers.Authorization ? 'Token ***' : undefined },
-      data: config.data ? { 
-        ...config.data, 
-        password: config.data.password ? '********' : undefined,
-        password2: config.data.password2 ? '********' : undefined
-      } : undefined
-    });
-    
     return config;
   },
-  (error) => {
-    console.error('[API] Erreur de requête:', error);
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
 // Intercepteur pour gérer les réponses et erreurs
 api.interceptors.response.use(
-  (response) => {
-    console.log(`[API] Réponse ${response.config.url}:`, {
-      status: response.status,
-      statusText: response.statusText,
-      data: response.data
-    });
-    return response;
-  },
+  (response) => response,
   (error) => {
-    const errorInfo = {
-      url: error.config?.url || 'inconnu',
-      method: error.config?.method?.toUpperCase() || 'INCONNU',
-      status: error.response?.status || 'aucun status',
-      statusText: error.response?.statusText || 'aucun status text',
-      data: error.response?.data || 'aucune donnée',
-      message: error.message
-    };
-    
-    console.error(`[API] Erreur ${errorInfo.method} ${errorInfo.url}:`, errorInfo);
-    
-    // Gestion spéciale des erreurs réseau
-    if (!error.response) {
-      console.error('[API] Erreur réseau - Le serveur pourrait être arrêté ou inaccessible');
+    const status = error.response?.status;
+    const url = String(error.config?.url || '');
+    const isAuthRoute = url.includes('/workflows/auth/login') || url.includes('/workflows/auth/register');
+
+    if (status === 401 && !isAuthRoute && typeof window !== 'undefined') {
+      clearAuth();
+      if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/register')) {
+        window.location.href = '/login';
+      }
     }
-    
+
     return Promise.reject(error);
   }
 );
@@ -87,7 +92,11 @@ const extractErrorMessage = (error: any): string => {
     if (error.code === 'ECONNABORTED') {
       return 'Le serveur met trop de temps a repondre. Reessayez dans quelques secondes.';
     }
-    return 'Impossible de contacter le serveur. Verifiez que le serveur Django est demarre.';
+    return 'Impossible de contacter le serveur. Verifiez votre connexion.';
+  }
+
+  if (error.response.status === 401) {
+    return "Session expiree ou non authentifiee. Reconnectez-vous.";
   }
   
   const { status, data } = error.response;
@@ -196,19 +205,14 @@ export const authService = {
         throw new Error('Format d\'email invalide');
       }
       
-      // Envoi de la requête d'inscription
       const response = await api.post('/workflows/auth/register/', userData);
-      
-      // Gestion de la réponse
-      if (response.data && response.data.token) {
-        localStorage.setItem('token', response.data.token);
-        localStorage.setItem('user', JSON.stringify(response.data.user));
-        setAuthCookie(response.data.token);
-        console.log('[AUTH] Inscription réussie');
+
+      if (response.data?.token && response.data?.user) {
+        persistAuth(response.data.token, response.data.user);
       } else {
-        console.warn('[AUTH] Réponse d\'inscription sans token:', response.data);
+        throw new Error("Inscription reussie mais token manquant. Reessayez de vous connecter.");
       }
-      
+
       return response.data;
     } catch (error: any) {
       console.error('[AUTH] Erreur d\'inscription:', error);
@@ -232,20 +236,14 @@ export const authService = {
         throw new Error('Format d\'email invalide');
       }
       
-      // Envoi de la requête de connexion avec l'URL correcte
       const response = await api.post('/workflows/auth/login/', credentials);
-      
-      // Gestion de la réponse
-      if (response.data && response.data.token) {
-        localStorage.setItem('token', response.data.token);
-        localStorage.setItem('user', JSON.stringify(response.data.user));
-        setAuthCookie(response.data.token);
-        console.log('[AUTH] Connexion réussie');
+
+      if (response.data?.token && response.data?.user) {
+        persistAuth(response.data.token, response.data.user);
       } else {
-        console.warn('[AUTH] Réponse de connexion sans token:', response.data);
-        throw new Error('Réponse du serveur invalide - token manquant');
+        throw new Error('Reponse du serveur invalide - token manquant');
       }
-      
+
       return response.data;
     } catch (error: any) {
       console.error('[AUTH] Erreur de connexion:', error);
@@ -256,39 +254,32 @@ export const authService = {
   // Déconnexion
   logout: async () => {
     try {
-      console.log('[AUTH] Début de la déconnexion...');
       await api.post('/workflows/auth/logout/');
-      console.log('[AUTH] Déconnexion réussie');
     } catch (error) {
       console.error('[AUTH] Erreur de déconnexion (non critique):', error);
     } finally {
-      // Nettoyage du stockage local dans tous les cas
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      clearAuthCookie();
-      console.log('[AUTH] Stockage local nettoyé');
+      clearAuth();
     }
   },
 
   // Vérification de l'authentification
   isAuthenticated: () => {
     if (typeof window === 'undefined') return false;
-    
-    const token = localStorage.getItem('token');
-    const user = localStorage.getItem('user');
-    
+
+    const token = getAuthToken();
+    const user = localStorage.getItem(USER_KEY);
+
     if (!token || !user) {
       return false;
     }
-    
-    // Vérification de la validité des données utilisateur
+
     try {
       JSON.parse(user);
+      // Resynchroniser cookie et localStorage
+      persistAuth(token, JSON.parse(user));
       return true;
     } catch (error) {
-      console.error('[AUTH] Données utilisateur invalides dans localStorage:', error);
-      localStorage.removeItem('user');
-      localStorage.removeItem('token');
+      clearAuth();
       return false;
     }
   },
@@ -296,16 +287,14 @@ export const authService = {
   // Récupération de l'utilisateur actuel
   getCurrentUser: () => {
     if (typeof window === 'undefined') return null;
-    
-    const userStr = localStorage.getItem('user');
+
+    const userStr = localStorage.getItem(USER_KEY);
     if (!userStr) return null;
-    
+
     try {
       return JSON.parse(userStr);
     } catch (error) {
-      console.error('[AUTH] Erreur lors de l\'analyse des données utilisateur:', error);
-      localStorage.removeItem('user');
-      localStorage.removeItem('token');
+      clearAuth();
       return null;
     }
   },
@@ -315,14 +304,14 @@ export const authService = {
     try {
       const response = await api.post('/workflows/auth/refresh/');
       if (response.data && response.data.token) {
-        localStorage.setItem('token', response.data.token);
+        const user = authService.getCurrentUser();
+        if (user) persistAuth(response.data.token, user);
         return response.data;
       }
     } catch (error) {
       console.error('[AUTH] Échec du rafraîchissement du token:', error);
       // Nettoyage du token invalide
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
+      clearAuth();
       clearAuthCookie();
       throw error;
     }
