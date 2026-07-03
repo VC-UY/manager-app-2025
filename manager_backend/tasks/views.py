@@ -12,6 +12,7 @@ class TaskViewSet(viewsets.ModelViewSet):
     """
     ViewSet pour les opérations CRUD sur les tâches.
     """
+    queryset = Task.objects.all()
     serializer_class = TaskSerializer
     permission_classes = [IsAuthenticated]
 
