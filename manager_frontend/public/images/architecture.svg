@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="640" y2="400" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#001440"/>
+      <stop offset="1" stop-color="#002060"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#003080" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#001a50" stop-opacity="0.9"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect width="640" height="400" rx="20" fill="url(#bg)"/>
+  <rect x="1" y="1" width="638" height="398" rx="19" stroke="#00B0F0" stroke-opacity="0.25"/>
+
+  <!-- Manager -->
+  <g transform="translate(48, 140)">
+    <rect width="140" height="120" rx="16" fill="url(#card)" stroke="#00D4FF" stroke-width="2"/>
+    <rect x="50" y="20" width="40" height="32" rx="6" fill="#00D4FF" fill-opacity="0.2" stroke="#00D4FF" stroke-width="1.5"/>
+    <rect x="56" y="26" width="28" height="18" rx="2" fill="#00D4FF" fill-opacity="0.5"/>
+    <line x1="70" y1="52" x2="70" y2="58" stroke="#00D4FF" stroke-width="2"/>
+    <line x1="58" y1="58" x2="82" y2="58" stroke="#00D4FF" stroke-width="2"/>
+    <text x="70" y="88" text-anchor="middle" fill="#FFFFFF" font-family="system-ui,sans-serif" font-size="14" font-weight="700">Manager</text>
+    <text x="70" y="106" text-anchor="middle" fill="#00B0F0" font-family="system-ui,sans-serif" font-size="11">Soumission workflows</text>
+  </g>
+
+  <!-- Arrow 1 -->
+  <path d="M200 200 H248" stroke="#00D4FF" stroke-width="2" stroke-dasharray="6 4"/>
+  <polygon points="248,195 258,200 248,205" fill="#00D4FF"/>
+
+  <!-- Coordinator -->
+  <g transform="translate(260, 120)">
+    <rect width="120" height="160" rx="16" fill="url(#card)" stroke="#00D4FF" stroke-width="2" filter="url(#glow)"/>
+    <circle cx="60" cy="52" r="22" stroke="#00D4FF" stroke-width="2.5"/>
+    <circle cx="60" cy="52" r="8" fill="#00D4FF"/>
+    <line x1="60" y1="30" x2="60" y2="18" stroke="#00B0F0" stroke-width="2"/>
+    <line x1="60" y1="74" x2="60" y2="86" stroke="#00B0F0" stroke-width="2"/>
+    <line x1="38" y1="52" x2="26" y2="52" stroke="#00B0F0" stroke-width="2"/>
+    <line x1="82" y1="52" x2="94" y2="52" stroke="#00B0F0" stroke-width="2"/>
+    <circle cx="60" cy="18" r="5" fill="#00D4FF"/>
+    <circle cx="60" cy="86" r="5" fill="#00D4FF"/>
+    <circle cx="26" cy="52" r="5" fill="#00B0F0"/>
+    <circle cx="94" cy="52" r="5" fill="#00B0F0"/>
+    <text x="60" y="118" text-anchor="middle" fill="#FFFFFF" font-family="system-ui,sans-serif" font-size="14" font-weight="700">Coordinateur</text>
+    <text x="60" y="136" text-anchor="middle" fill="#00B0F0" font-family="system-ui,sans-serif" font-size="11">Orchestration</text>
+    <text x="60" y="152" text-anchor="middle" fill="#00B0F0" font-family="system-ui,sans-serif" font-size="11">et distribution</text>
+  </g>
+
+  <!-- Arrow 2 -->
+  <path d="M388 200 H436" stroke="#00D4FF" stroke-width="2" stroke-dasharray="6 4"/>
+  <polygon points="436,195 446,200 436,205" fill="#00D4FF"/>
+
+  <!-- Volunteers cluster -->
+  <g transform="translate(452, 80)">
+    <rect width="160" height="240" rx="16" fill="url(#card)" stroke="#00B0F0" stroke-width="2"/>
+    <g transform="translate(24, 28)">
+      <rect width="48" height="36" rx="6" fill="#00B0F0" fill-opacity="0.15" stroke="#00B0F0" stroke-width="1.5"/>
+      <rect x="6" y="8" width="36" height="22" rx="2" stroke="#00B0F0" stroke-width="1.5"/>
+      <line x1="18" y1="36" x2="18" y2="42" stroke="#00B0F0" stroke-width="1.5"/>
+      <line x1="12" y1="42" x2="36" y2="42" stroke="#00B0F0" stroke-width="1.5"/>
+    </g>
+    <g transform="translate(88, 28)">
+      <rect width="48" height="36" rx="6" fill="#00B0F0" fill-opacity="0.15" stroke="#00B0F0" stroke-width="1.5"/>
+      <rect x="6" y="8" width="36" height="22" rx="2" stroke="#00B0F0" stroke-width="1.5"/>
+      <line x1="18" y1="36" x2="18" y2="42" stroke="#00B0F0" stroke-width="1.5"/>
+      <line x1="12" y1="42" x2="36" y2="42" stroke="#00B0F0" stroke-width="1.5"/>
+    </g>
+    <g transform="translate(24, 88)">
+      <rect width="48" height="36" rx="6" fill="#00B0F0" fill-opacity="0.15" stroke="#00B0F0" stroke-width="1.5"/>
+      <rect x="6" y="8" width="36" height="22" rx="2" stroke="#00B0F0" stroke-width="1.5"/>
+      <line x1="18" y1="36" x2="18" y2="42" stroke="#00B0F0" stroke-width="1.5"/>
+      <line x1="12" y1="42" x2="36" y2="42" stroke="#00B0F0" stroke-width="1.5"/>
+    </g>
+    <g transform="translate(88, 88)">
+      <rect width="48" height="36" rx="6" fill="#00B0F0" fill-opacity="0.15" stroke="#00B0F0" stroke-width="1.5"/>
+      <rect x="6" y="8" width="36" height="22" rx="2" stroke="#00B0F0" stroke-width="1.5"/>
+      <line x1="18" y1="36" x2="18" y2="42" stroke="#00B0F0" stroke-width="1.5"/>
+      <line x1="12" y1="42" x2="36" y2="42" stroke="#00B0F0" stroke-width="1.5"/>
+    </g>
+    <g transform="translate(56, 148)">
+      <rect width="48" height="36" rx="6" fill="#00D4FF" fill-opacity="0.2" stroke="#00D4FF" stroke-width="1.5"/>
+      <rect x="6" y="8" width="36" height="22" rx="2" stroke="#00D4FF" stroke-width="1.5"/>
+      <line x1="18" y1="36" x2="18" y2="42" stroke="#00D4FF" stroke-width="1.5"/>
+      <line x1="12" y1="42" x2="36" y2="42" stroke="#00D4FF" stroke-width="1.5"/>
+    </g>
+    <text x="80" y="210" text-anchor="middle" fill="#FFFFFF" font-family="system-ui,sans-serif" font-size="14" font-weight="700">Volontaires</text>
+    <text x="80" y="228" text-anchor="middle" fill="#00B0F0" font-family="system-ui,sans-serif" font-size="11">Machines du reseau</text>
+  </g>
+
+  <!-- Return results -->
+  <path d="M532 290 Q 320 360 118 290" stroke="#00D4FF" stroke-width="1.5" stroke-dasharray="5 5" fill="none" opacity="0.6"/>
+  <text x="320" y="378" text-anchor="middle" fill="#00B0F0" font-family="system-ui,sans-serif" font-size="11" opacity="0.8">Resultats consolides</text>
+</svg>
