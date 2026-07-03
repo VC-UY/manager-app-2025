@@ -85,8 +85,6 @@ export function ProfileModal() {
                 <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-white/95 backdrop-blur-xl border border-gray-200/50 shadow-2xl transition-all">
                   {/* Header avec gradient */}
                   <div className="relative bg-gradient-to-br from-slate-800 via-slate-900 to-slate-800 px-6 py-8 text-white">
-                    {/* Pattern décoratif */}
-\                    
                     <div className="relative flex items-center gap-4">
                       {/* Grand avatar */}
                       <div className="w-16 h-16 bg-gradient-to-br from-blue-400 via-purple-500 to-pink-500 rounded-xl flex items-center justify-center shadow-lg">

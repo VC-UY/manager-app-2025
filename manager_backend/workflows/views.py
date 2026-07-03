@@ -24,9 +24,17 @@ from .models import User
 
 
 class WorkflowViewSet(viewsets.ModelViewSet):
-    queryset = Workflow.objects.all().order_by('-created_at')
     serializer_class = WorkflowSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Workflow.objects.filter(owner=self.request.user).order_by('-created_at')
+
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save(owner=self.request.user)
 
 
 def process_workflow_submission(workflow_id):
@@ -233,7 +241,7 @@ def process_workflow_submission(workflow_id):
                     # Publier sur le canal d'assignment
                     thread_logger.info(f"Publication sur le canal d'assignment")
                     client = RedisClient.get_instance()
-                    from redis_communication.utils import get_manager_login_token
+                    from redis_communication.utils import get_coordinator_token_for_workflow
                     
                     client.publish('task/assignment',
                         {
@@ -241,7 +249,7 @@ def process_workflow_submission(workflow_id):
                             'assignments': enriched_assignments,
                         },
                         str(uuid.uuid4()),
-                        get_manager_login_token(),
+                        get_coordinator_token_for_workflow(workflow),
                         'request'
                     )
 
@@ -439,9 +447,20 @@ class LoginView(APIView):
                 print(f"[DEBUG] Utilisateur trouvé: {user.email}")
                 
                 if user.check_password(password):
-                    # Connexion réussie
                     token, created = Token.objects.get_or_create(user=user)
                     print(f"[DEBUG] Connexion réussie pour: {user.email}, Token: {token.key}")
+
+                    try:
+                        from redis_communication.auth_client import login_manager
+                        coord_ok, coord_data = login_manager(user.username, password, timeout=30)
+                        if coord_ok:
+                            if coord_data.get('token'):
+                                user.coordinator_token = coord_data['token']
+                            if coord_data.get('manager_id'):
+                                user.remote_id = coord_data['manager_id']
+                            user.save()
+                    except Exception as sync_err:
+                        print(f"[WARN] Synchronisation coordinateur: {sync_err}")
                     
                     return Response({
                         'token': token.key,
@@ -495,8 +514,11 @@ def get_workflow_outputs(request, workflow_id):
     """
     import os
 
+    if not request.user.is_authenticated:
+        return JsonResponse({'error': 'Authentification requise'}, status=401)
+
     try:
-        workflow = get_object_or_404(Workflow, id=workflow_id)
+        workflow = get_object_or_404(Workflow, id=workflow_id, owner=request.user)
 
         if not workflow.output_path or not os.path.exists(workflow.output_path):
             return JsonResponse({'files': [], 'message': 'Aucun fichier de sortie'}, status=200)
@@ -536,7 +558,7 @@ def download_workflow_output(request, workflow_id, file_path):
     from django.http import FileResponse, Http404
 
     try:
-        workflow = get_object_or_404(Workflow, id=workflow_id)
+        workflow = get_object_or_404(Workflow, id=workflow_id, owner=request.user)
 
         if not workflow.output_path:
             raise Http404("Chemin de sortie non défini")
@@ -574,7 +596,7 @@ def download_workflow_outputs_zip(request, workflow_id):
     from django.http import FileResponse, Http404
 
     try:
-        workflow = get_object_or_404(Workflow, id=workflow_id)
+        workflow = get_object_or_404(Workflow, id=workflow_id, owner=request.user)
 
         if not workflow.output_path or not os.path.exists(workflow.output_path):
             raise Http404("Aucun fichier de sortie")

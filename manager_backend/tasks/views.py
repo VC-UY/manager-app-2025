@@ -11,11 +11,12 @@ from .serializers import TaskSerializer, TaskDetailSerializer
 class TaskViewSet(viewsets.ModelViewSet):
     """
     ViewSet pour les opérations CRUD sur les tâches.
-    Permet de créer, lire, mettre à jour et supprimer des tâches.
     """
-    queryset = Task.objects.all()
     serializer_class = TaskSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Task.objects.filter(workflow__owner=self.request.user).order_by('-created_at')
 
     def get_serializer_class(self):
         if self.action == 'retrieve':
@@ -23,9 +24,8 @@ class TaskViewSet(viewsets.ModelViewSet):
         return TaskSerializer
 
     def perform_create(self, serializer):
-        # Récupérer le workflow associé
         workflow_id = self.request.data.get('workflow')
-        workflow = get_object_or_404(Workflow, id=workflow_id)
+        workflow = get_object_or_404(Workflow, id=workflow_id, owner=self.request.user)
         serializer.save(workflow=workflow)
 
     @action(detail=True, methods=['post'])
@@ -100,12 +100,7 @@ class TaskViewSet(viewsets.ModelViewSet):
             )
 
         # Vérifier si le workflow existe
-        workflow = Workflow.objects.filter(id=workflow_id).first()
-        if not workflow:
-            return Response(
-                {"error": "Workflow not found"}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
+        workflow = get_object_or_404(Workflow, id=workflow_id, owner=request.user)
 
         # Récupérer les tâches associées
         tasks = Task.objects.filter(workflow=workflow)
@@ -125,7 +120,7 @@ class TaskViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        tasks = Task.objects.filter(status=status_param)
+        tasks = Task.objects.filter(status=status_param, workflow__owner=request.user)
         serializer = self.get_serializer(tasks, many=True)
         
         return Response(serializer.data)

@@ -71,16 +71,26 @@ def format_timestamp(timestamp: float) -> str:
     return datetime.fromtimestamp(timestamp).isoformat()
 
 
-def get_manager_login_token():
+def get_manager_login_token(user=None):
     """
-    Recuper le token stoker dans le json .manager/manager_login_info.json et provoque une erreur NoLoginError si le fichier n'est pas trouvé
+    Recupere le token coordinateur du manager connecte ou du fichier legacy.
     """
+    if user and getattr(user, 'coordinator_token', None):
+        return user.coordinator_token
     try:
         with open('.manager/manager_login_info.json', 'r') as f:
             data = json.load(f)
             return data['token']
     except FileNotFoundError:
         raise NoLoginError("Le fichier .manager/manager_login_info.json n'a pas été trouvé")
+
+
+def get_coordinator_token_for_workflow(workflow):
+    """Token coordinateur propre au proprietaire du workflow."""
+    owner = getattr(workflow, 'owner', None)
+    if owner and owner.coordinator_token:
+        return owner.coordinator_token
+    return get_manager_login_token(owner)
     
 
 

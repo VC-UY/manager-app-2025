@@ -1,7 +1,18 @@
 // lib/api.ts
 import axios from 'axios';
 
-// Configuration de l'instance API avec la bonne URL de base
+function setAuthCookie(token: string) {
+  if (typeof document !== 'undefined') {
+    document.cookie = `manager_token=${token}; path=/; max-age=86400; SameSite=Lax`;
+  }
+}
+
+function clearAuthCookie() {
+  if (typeof document !== 'undefined') {
+    document.cookie = 'manager_token=; path=/; max-age=0';
+  }
+}
+
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002',
   timeout: 10000,
@@ -189,6 +200,7 @@ export const authService = {
       if (response.data && response.data.token) {
         localStorage.setItem('token', response.data.token);
         localStorage.setItem('user', JSON.stringify(response.data.user));
+        setAuthCookie(response.data.token);
         console.log('[AUTH] Inscription réussie');
       } else {
         console.warn('[AUTH] Réponse d\'inscription sans token:', response.data);
@@ -224,6 +236,7 @@ export const authService = {
       if (response.data && response.data.token) {
         localStorage.setItem('token', response.data.token);
         localStorage.setItem('user', JSON.stringify(response.data.user));
+        setAuthCookie(response.data.token);
         console.log('[AUTH] Connexion réussie');
       } else {
         console.warn('[AUTH] Réponse de connexion sans token:', response.data);
@@ -249,6 +262,7 @@ export const authService = {
       // Nettoyage du stockage local dans tous les cas
       localStorage.removeItem('token');
       localStorage.removeItem('user');
+      clearAuthCookie();
       console.log('[AUTH] Stockage local nettoyé');
     }
   },
@@ -306,6 +320,7 @@ export const authService = {
       // Nettoyage du token invalide
       localStorage.removeItem('token');
       localStorage.removeItem('user');
+      clearAuthCookie();
       throw error;
     }
   }
@@ -400,7 +415,7 @@ export const workflowService = {
   // Récupérer les tâches d'un workflow
   getWorkflowTasks: async (id: string) => {
     try {
-      const response = await api.get(`/workflows/${id}/tasks/`);
+      const response = await api.get(`/tasks/by_workflow/?workflow_id=${id}`);
       return response.data;
     } catch (error) {
       if (axios.isAxiosError(error) && error.response) {

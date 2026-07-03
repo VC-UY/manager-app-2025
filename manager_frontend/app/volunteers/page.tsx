@@ -6,6 +6,7 @@ import { volunteerService } from '@/lib/api';
 import { Volunteer } from '../../lib/types';
 import Link from 'next/link';
 import { ProfileModal } from '@/components/ProfileModal';
+import { ManagerNav } from '@/components/ManagerNav';
 
 export default function VolunteersPage() {
   const [volunteers, setVolunteers] = useState<Volunteer[]>([]);
@@ -65,35 +66,9 @@ export default function VolunteersPage() {
       `}</style>
 
       <div className="container mx-auto px-4 py-8 max-w-7xl">
-        {/* Top Navigation */}
-        <div className="mb-6 p-4 rounded-2xl backdrop-blur-xl"
-          style={{
-            background: 'linear-gradient(135deg, rgba(0, 32, 96, 0.8) 0%, rgba(0, 20, 64, 0.8) 100%)',
-            border: '2px solid rgba(0, 180, 240, 0.3)',
-            boxShadow: '0 8px 32px rgba(0, 32, 96, 0.5)',
-          }}>
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              {[
-                { href: '/workflows', label: 'Workflows', active: false },
-                { href: '/tasks', label: 'Tasks', active: false },
-                { href: '/volunteers', label: 'Volontaires', active: true }
-              ].map((item, idx) => (
-                <Link key={idx} href={item.href}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm transition-all duration-300"
-                  style={{
-                    background: item.active ? 'linear-gradient(135deg, #00B0F0 0%, #00D4FF 100%)' : 'rgba(255, 255, 255, 0.1)',
-                    color: '#FFFFFF',
-                    border: item.active ? '2px solid rgba(0, 212, 255, 0.4)' : '2px solid rgba(0, 180, 240, 0.2)',
-                    letterSpacing: '0.3px'
-                  }}>
-                  {item.label}
-                </Link>
-              ))}
-            </div>
-            <ProfileModal />
-          </div>
-        </div>
+        <ManagerNav />
+
+        {/* Header section continues below */}
 
         {/* Header */}
         <div className="relative mb-8 p-8 rounded-3xl backdrop-blur-xl overflow-hidden"
@@ -389,30 +364,14 @@ export default function VolunteersPage() {
 
                       {/* Actions */}
                       <div className="flex lg:flex-col gap-2">
-                        <Link href={`/volunteers/${volunteer.id}`}
+                        <Link href="/tasks"
                           className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-300 whitespace-nowrap"
                           style={{
                             background: 'rgba(0, 212, 255, 0.1)',
                             color: '#00D4FF',
                             border: '2px solid rgba(0, 212, 255, 0.3)'
                           }}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                          </svg>
-                          Détails
-                        </Link>
-                        <Link href={`/volunteers/${volunteer.id}/tasks`}
-                          className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-300 whitespace-nowrap"
-                          style={{
-                            background: 'rgba(0, 180, 240, 0.1)',
-                            color: '#00B0F0',
-                            border: '2px solid rgba(0, 180, 240, 0.3)'
-                          }}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                          </svg>
-                          Tâches
+                          Mes taches
                         </Link>
                       </div>
                     </div>

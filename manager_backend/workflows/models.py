@@ -67,6 +67,8 @@ class User(AbstractUser):
     # ID distant du manager dans le système de coordination
     remote_id = models.CharField(max_length=255, blank=True, null=True, 
                                help_text="Identifiant du manager dans le système de coordination")
+    coordinator_token = models.TextField(blank=True, null=True,
+                                        help_text="Token JWT coordinateur pour ce manager")
     
     # Configurer l'email comme champ de connexion
     USERNAME_FIELD = 'email'
@@ -75,12 +77,12 @@ class User(AbstractUser):
     # Simplifier les permissions - le manager a tous les droits
     is_staff = models.BooleanField(
         _('staff status'),
-        default=True,
+        default=False,
         help_text=_('Designates whether the user can log into this admin site.'),
     )
     is_superuser = models.BooleanField(
         _('superuser status'),
-        default=True,
+        default=False,
         help_text=_('Designates that this user has all permissions without explicitly assigning them.'),
     )
     
@@ -159,7 +161,8 @@ class Workflow(models.Model):
     owner = models.ForeignKey(
         User, 
         on_delete=models.CASCADE,
-        default=get_default_owner
+        null=True,
+        blank=True,
     )
     
     status = models.CharField(

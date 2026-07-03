@@ -3,9 +3,11 @@
 import { useEffect, useState } from 'react';
 import { taskService } from '@/lib/api';
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import { Task } from '@/lib/types';
 
-export default function TasksPage() {
+export default function WorkflowTasksPage() {
+  const { id } = useParams<{ id: string }>();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -26,28 +28,22 @@ export default function TasksPage() {
   };
 
   useEffect(() => {
+    if (!id) return;
     const fetchTasks = async () => {
       try {
         setLoading(true);
-        let tasksData;
-        
-        if (filterStatus) {
-          tasksData = await taskService.getTasksByStatus(filterStatus);
-        } else {
-          tasksData = await taskService.getTasks();
-        }
-        
+        const tasksData = await taskService.getWorkflowTasks(id);
         setTasks(tasksData);
         setLoading(false);
-      } catch (err: any) {
-        console.error('Erreur lors du chargement des tâches:', err);
-        setError(err.error || 'Une erreur est survenue lors du chargement des tâches');
+      } catch (err: unknown) {
+        const message = err && typeof err === 'object' && 'error' in err ? String((err as { error: string }).error) : 'Erreur de chargement';
+        setError(message);
         setLoading(false);
       }
     };
 
     fetchTasks();
-  }, [filterStatus]);
+  }, [id, filterStatus]);
 
   const getStatusInfo = (status: string) => {
     const statusMap: Record<string, any> = {
@@ -476,7 +472,7 @@ export default function TasksPage() {
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex gap-2">
-                            <Link href={`/tasks/${task.id}`}
+                            <Link href={`/workflows/${id}`}
                               className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200"
                               style={{
                                 background: `${COLORS.primary}20`,
@@ -487,19 +483,7 @@ export default function TasksPage() {
                                 <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                                 <path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                               </svg>
-                              Détails
-                            </Link>
-                            <Link href={`/tasks/${task.id}/volunteers`}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200"
-                              style={{
-                                background: '#8B5CF620',
-                                color: '#8B5CF6',
-                                border: '1px solid #8B5CF650'
-                              }}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                              </svg>
-                              Volontaires
+                              Workflow
                             </Link>
                           </div>
                         </td>

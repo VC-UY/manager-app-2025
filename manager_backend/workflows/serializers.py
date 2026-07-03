@@ -161,14 +161,24 @@ class RegisterSerializer(serializers.ModelSerializer):
                 )
 
                 if success:
-                    # Stocker le remote_id (manager_id) retourné par le coordinateur
                     remote_id = response.get('manager_id')
                     if remote_id:
                         user.remote_id = remote_id
-                        user.save()
-                        logger.info(f"Utilisateur synchronisé avec le coordinateur, remote_id: {remote_id}")
+                    token = response.get('token')
+                    if token:
+                        user.coordinator_token = token
                     else:
-                        logger.warning(f"Enregistrement réussi mais pas de manager_id dans la réponse: {response}")
+                        from redis_communication.auth_client import login_manager
+                        login_ok, login_data = login_manager(
+                            username=user.username,
+                            password=validated_data['password'],
+                            timeout=30,
+                        )
+                        if login_ok and login_data.get('token'):
+                            user.coordinator_token = login_data['token']
+                            if login_data.get('manager_id'):
+                                user.remote_id = login_data['manager_id']
+                    user.save()
                 else:
                     logger.warning(f"Échec de la synchronisation avec le coordinateur: {response.get('message', 'Erreur inconnue')}")
                     # L'utilisateur est créé localement même si la synchro échoue

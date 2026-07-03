@@ -30,7 +30,7 @@ SUPPORTED_SUBMIT_TYPES = {
 @permission_classes([IsAuthenticated])
 def submit_workflow_dispatcher(request, workflow_id):
     """Route la soumission vers le handler adapté au type de workflow."""
-    workflow = get_object_or_404(Workflow, id=workflow_id)
+    workflow = get_object_or_404(Workflow, id=workflow_id, owner=request.user)
 
     if workflow.workflow_type not in SUPPORTED_SUBMIT_TYPES:
         logger.warning(

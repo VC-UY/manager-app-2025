@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { workflowService } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { ProfileModal } from '@/components/ProfileModal';
+import { ManagerNav } from '@/components/ManagerNav';
 
 interface Workflow {
   id: string;
@@ -115,13 +116,15 @@ export default function WorkflowsPage() {
   };
 
   const getWorkflowTypeInfo = (type: string) => {
-    const typeMap: Record<string, any> = {
-      'ANALYTICS': { color: '#00D4FF', bg: 'rgba(0, 212, 255, 0.1)' },
-      'REPORTING': { color: '#00B0F0', bg: 'rgba(0, 180, 240, 0.1)' },
-      'INTEGRATION': { color: '#00D4FF', bg: 'rgba(0, 212, 255, 0.1)' },
-      'TEST': { color: '#00B0F0', bg: 'rgba(0, 180, 240, 0.1)' }
+    const typeMap: Record<string, { color: string; bg: string; label: string }> = {
+      MATRIX_ADDITION: { color: '#00D4FF', bg: 'rgba(0, 212, 255, 0.1)', label: 'Matrices' },
+      MATRIX_MULTIPLICATION: { color: '#00B0F0', bg: 'rgba(0, 180, 240, 0.1)', label: 'Matrices' },
+      ML_TRAINING: { color: '#00D4FF', bg: 'rgba(0, 212, 255, 0.15)', label: 'ML Training' },
+      ML_INFERENCE: { color: '#00B0F0', bg: 'rgba(0, 180, 240, 0.15)', label: 'ML Inference' },
+      OPEN_MALARIA: { color: '#00FF88', bg: 'rgba(0, 255, 136, 0.1)', label: 'OpenMalaria' },
+      CUSTOM: { color: '#FFA500', bg: 'rgba(255, 165, 0, 0.1)', label: 'Personnalise' },
     };
-    return typeMap[type] || { color: '#00D4FF', bg: 'rgba(0, 212, 255, 0.1)' };
+    return typeMap[type] || { color: '#00D4FF', bg: 'rgba(0, 212, 255, 0.1)', label: type };
   };
 
   return (
@@ -134,35 +137,7 @@ export default function WorkflowsPage() {
       `}</style>
 
       <div className="container mx-auto px-4 py-8 max-w-7xl">
-        {/* Top Navigation */}
-        <div className="mb-6 p-4 rounded-2xl backdrop-blur-xl"
-          style={{
-            background: 'linear-gradient(135deg, rgba(0, 32, 96, 0.8) 0%, rgba(0, 20, 64, 0.8) 100%)',
-            border: '2px solid rgba(0, 180, 240, 0.3)',
-            boxShadow: '0 8px 32px rgba(0, 32, 96, 0.5)',
-          }}>
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              {[
-                { href: '/workflows', label: 'Workflows', active: true },
-                { href: '/tasks', label: 'Tasks', active: false },
-                { href: '/volunteers', label: 'Volontaires', active: false }
-              ].map((item, idx) => (
-                <Link key={idx} href={item.href}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm transition-all duration-300"
-                  style={{
-                    background: item.active ? 'linear-gradient(135deg, #00B0F0 0%, #00D4FF 100%)' : 'rgba(255, 255, 255, 0.1)',
-                    color: '#FFFFFF',
-                    border: item.active ? '2px solid rgba(0, 212, 255, 0.4)' : '2px solid rgba(0, 180, 240, 0.2)',
-                    letterSpacing: '0.3px'
-                  }}>
-                  {item.label}
-                </Link>
-              ))}
-            </div>
-            <ProfileModal />
-          </div>
-        </div>
+        <ManagerNav />
 
         {/* Header */}
         <div className="relative mb-8 p-8 rounded-3xl backdrop-blur-xl overflow-hidden"
