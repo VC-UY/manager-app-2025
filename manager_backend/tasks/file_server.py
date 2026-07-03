@@ -123,11 +123,20 @@ def start_file_server(workflow: Workflow, port: int = 0) -> int:
         logger.info(f"Un serveur de fichiers est déjà en cours pour le workflow {workflow_id}")
         return active_servers[workflow_id]['port']
     
-    # Déterminer le répertoire de base pour les fichiers du workflow
-    workflow_base_dir = workflow.input_path
+    # Déterminer le répertoire de base pour les fichiers du workflow.
+    # Certains workflows n'ont pas input_path défini: on crée alors un fallback stable.
+    workflow_base_dir = (workflow.input_path or "").strip()
+    if not workflow_base_dir:
+        fallback_root = os.path.join("/tmp", "vcuy-workflows", workflow_id)
+        workflow_base_dir = os.path.join(fallback_root, "input")
+        logger.warning(
+            "input_path vide pour le workflow %s, fallback utilisé: %s",
+            workflow_id,
+            workflow_base_dir,
+        )
     
     if not os.path.exists(workflow_base_dir):
-        os.makedirs(workflow_base_dir)
+        os.makedirs(workflow_base_dir, exist_ok=True)
         logger.warning(f"Le répertoire du workflow {workflow_id} n'existe pas, il a été créé: {workflow_base_dir}")
     
     # Créer un gestionnaire de requêtes avec le répertoire de base du workflow

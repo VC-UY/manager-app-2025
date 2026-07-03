@@ -2,7 +2,7 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import IsAuthenticated
 from django.db.models import Count
 from .models import Volunteer, VolunteerTask
 from tasks.models import Task
@@ -22,7 +22,7 @@ class VolunteerViewSet(viewsets.ModelViewSet):
     """
     queryset = Volunteer.objects.all()
     serializer_class = VolunteerSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def get_serializer_class(self):
         if self.action == 'retrieve':
@@ -126,7 +126,7 @@ class VolunteerTaskViewSet(viewsets.ModelViewSet):
     """
     queryset = VolunteerTask.objects.all()
     serializer_class = VolunteerTaskSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
     @action(detail=False, methods=['get'])
     def by_task(self, request):
@@ -218,7 +218,7 @@ class TaskViewSet(viewsets.ModelViewSet):
     """
     queryset = Task.objects.all()
     serializer_class = TaskSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
     @action(detail=False, methods=['get'])
     def by_workflow(self, request):

@@ -26,13 +26,13 @@ from .models import User
 class WorkflowViewSet(viewsets.ModelViewSet):
     queryset = Workflow.objects.all().order_by('-created_at')
     serializer_class = WorkflowSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
 
-@api_view(['POST'])
-def submit_workflow_view(request, workflow_id):
+def process_workflow_submission(workflow_id):
     """
-    View to submit a workflow for processing.
+    Logique de soumission d'un workflow (sans encapsulation DRF).
+    Utilisable depuis le dispatcher et l'API view.
     """
     try:
         # Récupérer le workflow
@@ -118,8 +118,11 @@ def submit_workflow_view(request, workflow_id):
                 from redis_communication.utils import get_local_ip
                 ip_address = get_local_ip()
                 if not ip_address:
-                    thread_logger.error(f"Impossible de récupérer l'adresse IP locale du serveur")
-                    raise Exception("Erreur lors de la récupération de l'adresse IP du serveur")
+                    ip_address = "127.0.0.1"
+                    thread_logger.warning(
+                        "IP locale indisponible, fallback vers %s pour le serveur de fichiers",
+                        ip_address,
+                    )
                 thread_logger.info(f"Adresse IP du serveur: {ip_address}")
                 # Construire l'URL du serveur de fichiers
                 file_server_url = f"http://{ip_address}:{server_port}"
@@ -132,8 +135,9 @@ def submit_workflow_view(request, workflow_id):
                 })
                 
                 # Mettre à jour le statut du workflow
-                if response.get('volunteers'):
-                    thread_logger.info(f"Volontaires disponibles: {len(response.get('volunteers'))}")
+                volunteers = response.get('volunteers') if isinstance(response, dict) else None
+                if volunteers:
+                    thread_logger.info(f"Volontaires disponibles: {len(volunteers)}")
                     workflow.status = WorkflowStatus.ASSIGNING
                     workflow.save()
                     
@@ -147,10 +151,10 @@ def submit_workflow_view(request, workflow_id):
                     
                     thread_logger.info(f"Lancement de l'assignation")
                     from tasks.scheduller import assign_workflow_to_volunteers
-                    thread_logger.info(f"Volontaires disponibles: {response.get('volunteers')}")
+                    thread_logger.info(f"Volontaires disponibles: {volunteers}")
                     
                     # Assigner les tâches
-                    assignment_result = assign_workflow_to_volunteers(workflow, response.get('volunteers'))
+                    assignment_result = assign_workflow_to_volunteers(workflow, volunteers)
                     thread_logger.info(f"Résultat de l'assignation: {assignment_result}")
                     
                     # Préparer les informations du serveur de fichiers pour chaque tâche
@@ -232,8 +236,11 @@ def submit_workflow_view(request, workflow_id):
                     from redis_communication.utils import get_local_ip
                     server_ip = get_local_ip()
                     if not server_ip:
-                        thread_logger.error(f"Impossible de récupérer l'adresse IP locale du serveur")
-                        raise Exception("Erreur lors de la récupération de l'adresse IP du serveur")
+                        server_ip = "127.0.0.1"
+                        thread_logger.warning(
+                            "IP locale indisponible, fallback vers %s pour enrichir les tâches",
+                            server_ip,
+                        )
                     thread_logger.info(f"Adresse IP du serveur: {server_ip}")
                     
                     # Enrichir les informations d'assignation pour chaque volontaire
@@ -296,9 +303,6 @@ def submit_workflow_view(request, workflow_id):
                     )
                 else:
                     thread_logger.info(f"Aucun volontaire reçu, lancement de l'écoute sur le canal d'assignment")
-                    pubsub = RedisClient.get_instance()
-                    pubsub.subscribe('workflow/assignment')
-                    thread_logger.debug(f"Souscription au canal 'workflow/assignment' réussie")
                     
                     # Notifier l'attente de volontaires
                     thread_logger.info(f"Notification de l'attente de volontaires")
@@ -384,6 +388,13 @@ def submit_workflow_view(request, workflow_id):
             pass  # Ne pas échouer si la notification échoue
             
         return JsonResponse({'error': f'Unexpected error: {str(e)}'}, status=500)
+
+
+@api_view(['POST'])
+def submit_workflow_view(request, workflow_id):
+    """View to submit a workflow for processing."""
+    return process_workflow_submission(workflow_id)
+
     
 class RegisterView(APIView):
     # TRÈS IMPORTANT: AllowAny est nécessaire pour permettre l'inscription!
@@ -469,7 +480,7 @@ class LoginView(APIView):
                 user = User.objects.get(email=email)
                 print(f"[DEBUG] Utilisateur trouvé: {user.email}")
                 
-                if user.password == password:
+                if user.check_password(password):
                     # Connexion réussie
                     token, created = Token.objects.get_or_create(user=user)
                     print(f"[DEBUG] Connexion réussie pour: {user.email}, Token: {token.key}")

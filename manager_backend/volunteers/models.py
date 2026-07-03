@@ -35,7 +35,7 @@ class VolunteerTask(models.Model):
     volunteer = models.ForeignKey("Volunteer", on_delete=models.CASCADE, related_name="assigned_tasks")
 
     assigned_at = models.DateTimeField(default=timezone.now)
-    progress = models.FloatField(default=0)
+    accepted_at = models.DateTimeField(null=True, blank=True)
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 
@@ -51,10 +51,7 @@ class VolunteerTask(models.Model):
         ("PAUSED", "Paused")
     ]
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="ASSIGNED")
-    progress = models.FloatField(default=0) 
-    accepted_at = models.DateTimeField(null=True, blank=True)
-    started_at = models.DateTimeField(null=True, blank=True)
-    completed_at = models.DateTimeField(null=True, blank=True)
+    progress = models.FloatField(default=0)
     result = models.JSONField(null=True, blank=True)
     error = models.TextField(null=True, blank=True)
 
