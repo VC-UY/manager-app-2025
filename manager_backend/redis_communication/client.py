@@ -70,7 +70,8 @@ class RedisClient:
             host=self.host,
             port=self.port,
             db=self.db,
-            decode_responses=True
+            decode_responses=True,
+            protocol=2,
         )
         
         # PubSub pour les abonnements

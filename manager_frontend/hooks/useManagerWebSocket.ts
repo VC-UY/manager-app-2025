@@ -5,7 +5,7 @@ export function useManagerWebSocket(onEvent: (event: any) => void) {
     // Adapter l'URL à celle de ton backend WebSocket
     // Récupérer le token d'authentification depuis le localStorage
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    let wsUrl = process.env.NEXT_PUBLIC_MANAGER_WS_URL || 'ws://localhost:8001/ws/manager/';
+    let wsUrl = process.env.NEXT_PUBLIC_MANAGER_WS_URL || 'ws://localhost:8002/ws/manager/';
     if (token) {
       wsUrl += (wsUrl.includes('?') ? '&' : '?') + `token=${encodeURIComponent(token)}`;
     }

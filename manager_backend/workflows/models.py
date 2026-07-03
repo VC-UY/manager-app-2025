@@ -14,7 +14,6 @@ class UserManager(BaseUserManager):
             raise ValueError('L\'adresse email est obligatoire')
         email = self.normalize_email(email)
         user = self.model(email=email, **extra_fields)
-        user.password = password # plain text
         user.set_password(password)
         user.save(using=self._db)
         return user

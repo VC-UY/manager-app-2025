@@ -54,7 +54,7 @@ def handle_task_accept(channel: str, message: Message):
         volunteer = Volunteer.objects.get(coordinator_volunteer_id=volunteer_id)
 
         # Verifier si le workflow est en cours
-        if workflow.status != WorkflowStatus.RUNNING:
+        if workflow.status not in (WorkflowStatus.RUNNING, WorkflowStatus.ASSIGNING, WorkflowStatus.PENDING):
             workflow.status = WorkflowStatus.RUNNING
             workflow.save()
             
@@ -218,9 +218,11 @@ def handle_task_status(channel: str, message: Message):
         status = data['status']
 
         # Récupérer les objets
-        from workflows.models import Workflow
-        from tasks.models import Task
+        from workflows.models import Workflow, WorkflowStatus
+        from tasks.models import Task, TaskStatus
         from volunteers.models import Volunteer, VolunteerTask
+        from tasks.workflow_utils import check_and_finalize_workflow, dependencies_satisfied
+        from tasks.reassignment import reassign_failed_tasks
         workflow = Workflow.objects.get(id=workflow_id)
         task = Task.objects.get(id=task_id)
         volunteer = Volunteer.objects.get(coordinator_volunteer_id=volunteer_id)
@@ -243,14 +245,14 @@ def handle_task_status(channel: str, message: Message):
             # La tâche est terminée, télécharger les fichiers de sortie
             volunteer_task.completed_at = timezone.now()
             volunteer_task.progress = 100.0
+            volunteer_task.status = 'COMPLETED'
             logger.info(f"Tâche {task.name} terminée par le volontaire {volunteer.name}, téléchargement des fichiers de sortie")
 
-            # Notifier le changement de statut via WebSocket
             from websocket_service.client import notify_event
             notify_event('task_status_change', {
                 'workflow_id': str(workflow.id),
                 'task_id': str(task.id),
-                'status': 'COMPLETED',
+                'status': TaskStatus.COMPLETED,
                 'volunteer': volunteer.name,
                 'message': f"Tâche {task.name} terminée par {volunteer.name}"
             })
@@ -297,14 +299,12 @@ def handle_task_status(channel: str, message: Message):
                             success = False
                     
                     if success:
-                        # Mettre à jour la tâche avec les fichiers de sortie
                         task.output_files = downloaded_files
-                        task.status = 'completed'
-                        task.end_date = timezone.now()
+                        task.status = TaskStatus.COMPLETED
+                        task.end_time = timezone.now()
                         task.save()
                         logger.info(f"Tâche {task.name} terminée avec succès, fichiers téléchargés")
                         
-                        # Envoyer une notification de fin de tâche au volontaire
                         from redis_communication.client import RedisClient
                         from redis_communication.utils import get_manager_login_token
                         import uuid
@@ -315,71 +315,29 @@ def handle_task_status(channel: str, message: Message):
                                 'volunteer_id': str(volunteer.coordinator_volunteer_id),
                                 'workflow_id': str(workflow.id),
                                 'status': 'terminated',
-                                'clean_files': True,  # Supprimer les fichiers côté volontaire
+                                'clean_files': True,
                                 'timestamp': timezone.now().isoformat()
                             },
                             str(uuid.uuid4()),
                             get_manager_login_token(),
                             'request'
                         )
-                        
-                        logger.info(f"Tâche {task.name} terminée avec succès, fichiers téléchargés")
-                        
-                        # Vérifier si toutes les tâches du workflow sont terminées
-                        all_tasks_completed = Task.objects.filter(workflow=workflow).exclude(status='completed').count() 
-                        terminated_tasks = all_tasks_completed == 0
-                        if terminated_tasks:
 
-                            # Mettre à jour le workflow
-                            workflow.status = 'completed'
-                            workflow.end_date = timezone.now()
-                            workflow.save()
-                            logger.info(f"Workflow {workflow.name} terminé avec succès")
+                        from tasks.workflow_utils import check_and_finalize_workflow, dependencies_satisfied
+                        from tasks.reassignment import reassign_failed_tasks
 
-                            # Envoyer une notification de fin de workflow au volontaire
-                            redis_client.publish('workflow/terminate', {
-                                'workflow_id': str(workflow.id),
-                                'volunteer_id': str(volunteer.coordinator_volunteer_id),
-                                'status': 'terminated',
-                                'clean_files': True,  # Supprimer les fichiers côté volontaire
-                                'timestamp': timezone.now().isoformat()
-                            },
-                            str(uuid.uuid4()),
-                            get_manager_login_token(),
-                            'request'
-                            )
-                            
-                            logger.info(f"Workflow {workflow.name} terminé avec succès, fichiers téléchargés")
+                        final_status = check_and_finalize_workflow(workflow)
 
-                            # Notifier le changement de statut via WebSocket
-                            
-                            from websocket_service.client import notify_event
-                            notify_event('workflow_status_change', {
-                                'workflow_id': str(workflow.id),
-                                'status': 'terminated',
-                                'message': f"Workflow {workflow.name} terminé avec succès"
-                            })
-                            
-                            # Lancer l'agregation des résultats
-                            from workflows.models import WorkflowType
-                            if workflow.workflow_type == WorkflowType.ML_TRAINING:
-                                from workflows.examples.distributed_training_demo.merge_models import   merge_models
-                                input_path = workflow.output_path
-                                output_path = os.path.join(workflow.output_path, 'merged_model.pt')
-                                merge_models(input_path, output_path)
-                                logger.info(f"Modèles fusionnés avec succès")
+                        if final_status == WorkflowStatus.PARTIAL_FAILURE:
+                            reassign_failed_tasks(workflow)
 
-                                # Supprimer les sous dossier de l'output sauf merged_model.pt
-                                import os
-                                for item in os.listdir(workflow.output_path):
-                                    item_path = os.path.join(workflow.output_path, item)
-                                    if os.path.isdir(item_path):
-                                        # Supprimer le sous-dossier et tout son contenu
-                                        shutil.rmtree(item_path)
-                                logger.info(f"Fichiers de sortie supprimés")
-                        
-                        else:
-                            logger.info(f"Taches terminées: {all_tasks_completed}/{workflow.tasks.count()}")
+                        # Débloquer les tâches dépendantes si leurs prérequis sont remplis
+                        for dependent in workflow.tasks.filter(status=TaskStatus.CREATED):
+                            if dependencies_satisfied(dependent):
+                                logger.info(
+                                    "Tâche %s prête pour assignation (dépendances satisfaites)",
+                                    dependent.id,
+                                )
 
                                 
 
@@ -458,8 +416,8 @@ def handle_task_status(channel: str, message: Message):
             })
             
             # La tâche a échoué
-            task.status = 'failed'
-            task.end_date = timezone.now()
+            task.status = TaskStatus.FAILED
+            task.end_time = timezone.now()
             
             # Vérifier le type d'erreur
             error_type = data.get('error_type', 'unknown')
@@ -538,9 +496,16 @@ def handle_task_status(channel: str, message: Message):
                 reassignment_thread.start()
                 
             else:
-                # Autres types d'erreurs
                 logger.error(f"Erreur non gérée pour la tâche {task.name}: {error_type} - {error_message}")
-                # On pourrait implémenter d'autres stratégies de gestion d'erreurs ici
+                volunteer_task.status = 'FAILED'
+                task.increment_attempts()
+
+                from tasks.reassignment import reassign_failed_tasks
+                from tasks.workflow_utils import workflow_task_counts
+
+                counts = workflow_task_counts(workflow)
+                if counts['running'] == 0:
+                    reassign_failed_tasks(workflow)
         
         return True
 
@@ -602,6 +567,8 @@ def handle_task_complete(channel: str, message: Message):
         from workflows.models import Workflow, WorkflowStatus
         from tasks.models import Task, TaskStatus
         from volunteers.models import Volunteer, VolunteerTask
+        from tasks.workflow_utils import check_and_finalize_workflow
+        from tasks.reassignment import reassign_failed_tasks
         
         # Récupérer les objets
         workflow = Workflow.objects.get(id=workflow_id)
@@ -637,26 +604,17 @@ def handle_task_complete(channel: str, message: Message):
 
 
 
-            # Verifier si c'etait la derniere tache du workflow qui etait en running et qu'il n'y a pas de tache echouée
-            running = workflow.tasks.filter(status="RUNNING").count()
-            failed = workflow.tasks.filter(status="FAILED").count()
-            if running == 0 and failed == 0:
-                # Toutes les taches sont complétées, mettre à jour le statut du workflow
-                workflow.status = WorkflowStatus.COMPLETED
-                workflow.save()
-                logger.info(f"Toutes les taches du workflow {workflow.name} sont complétées, statut mis à jour: COMPLETED")
+            # Vérifier l'état global du workflow
+            final_status = check_and_finalize_workflow(workflow)
+            if final_status == WorkflowStatus.PARTIAL_FAILURE:
+                reassign_failed_tasks(workflow)
 
-                # Notifier la complétion du workflow via WebSocket
-                from websocket_service.client import notify_event
-                notify_event('workflow_status_change', {
-                    'workflow_id': str(workflow.id),
-                    'status': 'COMPLETED',
-                    'message': f"Workflow {workflow.name} complété"
-                })
-            
-            elif running==0 and failed > 0:
-                # TODO estimer les ressources des taches echouées et demander une liste de volontaire pour cela
-                pass
+            # Libérer les ressources du volontaire
+            volunteer.status = "available"
+            volunteer.save()
+            logger.info(f"Volontaire {volunteer.name} marqué comme disponible")
+
+            return True
 
         else:
             logger.warning(f"Aucune assignation trouvée pour la tâche {task.name} et le volontaire {volunteer.name}")
@@ -673,25 +631,26 @@ def handle_task_complete(channel: str, message: Message):
             )
             logger.info(f"Nouvelle assignation créée (complétée): tâche {task.name} complétée par le volontaire {volunteer.name}")
         
-        # Mettre à jour le statut de la tâche
-        task.status = "COMPLETED"
+        # Mettre à jour le statut de la tâche (cas sans assignation préalable)
+        task.status = TaskStatus.COMPLETED
         task.save()
         logger.info(f"Statut de la tâche {task.name} mis à jour: COMPLETED")
 
-        # Notifier le changement de statut via WebSocket
         from websocket_service.client import notify_event
         notify_event('task_status_change', {
             'workflow_id': str(workflow.id),
             'task_id': str(task.id),
-            'status': 'COMPLETED',
+            'status': TaskStatus.COMPLETED,
             'volunteer': volunteer.name,
             'message': f"Tâche {task.name} complétée par {volunteer.name}"
         })
-        
-        # Libérer les ressources du volontaire
+
+        final_status = check_and_finalize_workflow(workflow)
+        if final_status == WorkflowStatus.PARTIAL_FAILURE:
+            reassign_failed_tasks(workflow)
+
         volunteer.status = "available"
         volunteer.save()
-        logger.info(f"Volontaire {volunteer.name} marqué comme disponible") 
         
         return True
         

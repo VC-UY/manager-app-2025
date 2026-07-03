@@ -5,13 +5,16 @@ from volunteers.models import Volunteer, VolunteerTask
 from django.utils import timezone
 from collections import defaultdict
 import logging
-import torch
-from torch.distributions import Categorical
-import torch.nn as nn
-import torch.nn.functional as F
-from tasks.grok.volunteer_computing_env import VolunteerSchedulingEnv, Task as EnvTask, Workflow as EnvWorkflow, Volunteer as EnvVolunteer
-from tasks.grok.train_a3c import ActorCriticNet
 
+try:
+    import torch
+    from torch.distributions import Categorical
+    import torch.nn as nn
+    import torch.nn.functional as F
+    from tasks.grok.volunteer_computing_env import VolunteerSchedulingEnv, Task as EnvTask, Workflow as EnvWorkflow, Volunteer as EnvVolunteer
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -273,6 +276,8 @@ def a3c_algorithm(tasks: list, volunteers: list, model_path: str = MODEL_PATH) -
     """
     Algorithme A3C pour assigner chaque tâche à un volontaire.
     """
+    if not TORCH_AVAILABLE:
+        raise ImportError("PyTorch non installé — pip install -r requirements-ml.txt")
 
     # Configuration
     MAX_TASKS = 500  # Capacité maximale
@@ -454,15 +459,24 @@ def assign_workflow_to_volunteers(workflow: Workflow, volunteers_data: list, alg
             logger.error(f"Erreur lors de la création/mise à jour du volontaire {volunteer_id}: {e}")
             continue
     
-    tasks = workflow.tasks.filter(status=TaskStatus.CREATED).order_by('created_at')
+    from tasks.workflow_utils import get_assignable_tasks
+
+    assignable_tasks = get_assignable_tasks(workflow)
+    if not assignable_tasks:
+        logger.warning(
+            "Aucune tâche assignable pour le workflow %s", workflow.id,
+        )
+        return {}
+
     tasks_data = [
         {
             "task_id": str(t.id),
             "task_name": t.name,
             "required_resources": t.required_resources,
-            "created_at": t.created_at
+            "created_at": t.created_at,
+            "dependencies": t.dependencies or [],
         }
-        for t in tasks
+        for t in assignable_tasks
     ]
     
     # Sélectionner l'algorithme
@@ -471,7 +485,11 @@ def assign_workflow_to_volunteers(workflow: Workflow, volunteers_data: list, alg
     elif algorithm == "round_robin":
         assignments = round_robin_threshold_algorithm(tasks_data, volunteers_data, trust_threshold=0.5)
     elif algorithm == "a3c":
-        assignments = a3c_algorithm(tasks_data, volunteers_data, model_path=MODEL_PATH)
+        try:
+            assignments = a3c_algorithm(tasks_data, volunteers_data, model_path=MODEL_PATH)
+        except (ImportError, FileNotFoundError, OSError) as exc:
+            logger.warning("A3C indisponible (%s), fallback round_robin", exc)
+            assignments = round_robin_threshold_algorithm(tasks_data, volunteers_data, trust_threshold=0.5)
     elif algorithm == 'random_assignment':
         assignments = random_assigment_algorithm(tasks_data, volunteers_data)               
     else:  # Par défaut, FCFS
@@ -512,7 +530,10 @@ def assign_workflow_to_volunteers(workflow: Workflow, volunteers_data: list, alg
         workflow.status = WorkflowStatus.PENDING
         workflow.save()
     
-    logger.warning(f"Résumé des assignations: {len(task_assignments)} volontaires, {assigned_count}/{tasks.count()} tâches assignées")
+    logger.warning(
+        f"Résumé des assignations: {len(task_assignments)} volontaires, "
+        f"{assigned_count}/{len(assignable_tasks)} tâches assignables traitées"
+    )
     
     return dict(task_assignments)
 

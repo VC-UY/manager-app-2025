@@ -1,0 +1,3 @@
+# Dépendances optionnelles pour le scheduler A3C (reinforcement learning)
+torch>=2.0.0
+numpy

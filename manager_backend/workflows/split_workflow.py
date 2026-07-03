@@ -1323,6 +1323,20 @@ def split_workflow(id: uuid.UUID, workflow_type: WorkflowType, logger, num_tasks
         if num_tasks is None or population_per_task is None:
             raise ValueError("num_tasks et population_per_task doivent être spécifiés pour OpenMalaria")
         tasks = split_openmalaria_workflow(workflow_instance, num_tasks, population_per_task, logger)
+    elif workflow_type == WorkflowType.MATRIX_ADDITION:
+        from workflows.split_generic import split_matrix_workflow
+        n = num_tasks or (workflow_instance.metadata or {}).get('num_tasks', 4)
+        tasks = split_matrix_workflow(workflow_instance, 'add', logger, num_tasks=int(n))
+    elif workflow_type == WorkflowType.MATRIX_MULTIPLICATION:
+        from workflows.split_generic import split_matrix_workflow
+        n = num_tasks or (workflow_instance.metadata or {}).get('num_tasks', 4)
+        tasks = split_matrix_workflow(workflow_instance, 'multiply', logger, num_tasks=int(n))
+    elif workflow_type == WorkflowType.ML_INFERENCE:
+        from workflows.split_generic import split_ml_inference_workflow
+        tasks = split_ml_inference_workflow(workflow_instance, logger)
+    elif workflow_type == WorkflowType.CUSTOM:
+        from workflows.split_generic import split_custom_workflow
+        tasks = split_custom_workflow(workflow_instance, logger)
     else:
         raise ValueError(f"Type de workflow non supporté: {workflow_type}")
     

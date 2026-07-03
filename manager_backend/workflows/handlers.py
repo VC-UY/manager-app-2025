@@ -4,6 +4,7 @@ Gestionnaires pour les workflows dans le système de communication Redis.
 
 import json
 import logging
+import math
 import uuid
 from typing import Dict, Any, Optional, Callable
 from django.utils import timezone
@@ -19,57 +20,48 @@ from workflows.examples.distributed_training_demo.estimate_resources import esti
 
 
 def estimate_ml_inference_resources(input_data_size: int) -> Dict[str, Any]:
-    """
-    Estime les ressources nécessaires pour un workflow d'inférence de modèle ML.
-    
-    Args:
-        input_data_size: Taille des données d'entrée en mégaoctets
-        
-    Returns:
-        Dict: Ressources estimées
-    """
-    # TODO: Implémenter l'estimation des ressources
+    """Estime les ressources pour l'inférence ML à partir de la taille des données (Mo)."""
+    memory_mb = max(1024, int(input_data_size * 64))
     return {
-        'cpu_cores': 2,
-        'memory_mb': 4096,
-        'disk_space_mb': 10000,
-        'gpu': True
+        'cpu_cores': max(1, min(8, math.ceil(input_data_size / 500))),
+        'memory_mb': memory_mb,
+        'disk_space_mb': max(2048, input_data_size * 10),
+        'gpu': input_data_size > 1000,
     }
+
+
+def estimate_matrix_resources(input_data_size: int, operation: str = 'add') -> Dict[str, Any]:
+    """Estime les ressources pour des opérations matricielles distribuées."""
+    size_mb = max(1, input_data_size or 64)
+    multiplier = 3 if operation == 'multiply' else 2
+    memory_mb = max(512, size_mb * multiplier * 8)
+    return {
+        'cpu_cores': max(1, min(16, math.ceil(size_mb / 256))),
+        'memory_mb': memory_mb,
+        'disk_space_mb': max(1024, size_mb * 4),
+        'gpu': False,
+    }
+
 
 def estimate_matrix_addition_resources(input_data_size: int) -> Dict[str, Any]:
-    """
-    Estime les ressources nécessaires pour un workflow d'addition de matrices.
-    
-    Args:
-        input_data_size: Taille des données d'entrée en mégaoctets
-        
-    Returns:
-        Dict: Ressources estimées
-    """
-    # TODO: Implémenter l'estimation des ressources
-    return {
-        'cpu_cores': 2,
-        'memory_mb': 4096,
-        'disk_space_mb': 10000,
-        'gpu': True
-    }
+    return estimate_matrix_resources(input_data_size, 'add')
+
 
 def estimate_matrix_multiplication_resources(input_data_size: int) -> Dict[str, Any]:
-    """
-    Estime les ressources nécessaires pour un workflow de multiplication de matrices.
-    
-    Args:
-        input_data_size: Taille des données d'entrée en mégaoctets
-        
-    Returns:
-        Dict: Ressources estimées
-    """
-    # TODO: Implémenter l'estimation des ressources
+    return estimate_matrix_resources(input_data_size, 'multiply')
+
+
+def estimate_custom_resources(workflow_metadata: dict) -> Dict[str, Any]:
+    """Estime les ressources d'un workflow CUSTOM à partir de ses métadonnées."""
+    metadata = workflow_metadata or {}
+    tasks = metadata.get('tasks', [])
+    num_tasks = len(tasks) if tasks else int(metadata.get('num_tasks', 1))
+    per_task_ram = int(metadata.get('ram_mb_per_task', 512))
     return {
-        'cpu_cores': 2,
-        'memory_mb': 4096,
-        'disk_space_mb': 10000,
-        'gpu': True
+        'cpu_cores': max(1, min(32, num_tasks)),
+        'memory_mb': per_task_ram * num_tasks,
+        'disk_space_mb': int(metadata.get('disk_space_mb', 1024)),
+        'gpu': bool(metadata.get('gpu_required', False)),
     }
 
 logger = logging.getLogger(__name__)
@@ -129,6 +121,8 @@ def submit_workflow_handler(workflow_id: str, callback: Optional[Callable[[Dict[
             estimated_resources = estimate_matrix_multiplication_resources(workflow.input_data_size)
         elif workflow.workflow_type == WorkflowType.OPEN_MALARIA:
             estimated_resources = estimate_open_malaria_resources(workflow.metadata.get('num_task', 4))
+        elif workflow.workflow_type == WorkflowType.CUSTOM:
+            estimated_resources = estimate_custom_resources(workflow.metadata)
         else:
             logger.warning(f"Type de workflow non supporté pour l'estimation des ressources: {workflow.workflow_type}")
             return False, {

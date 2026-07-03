@@ -16,8 +16,7 @@ import os
 logger = logging.getLogger(__name__)
 
 
-@api_view(['POST'])
-def submit_openmalaria_workflow_view(request, workflow_id):
+def process_openmalaria_submission(workflow_id, request=None):
     """
     Soumet un workflow OpenMalaria pour traitement avec un nombre de tâches et une population par tâche.
     
@@ -380,3 +379,9 @@ def submit_openmalaria_workflow_view(request, workflow_id):
             'success': False,
             'error': f'Erreur inattendue: {str(e)}'
         }, status=500)
+
+
+@api_view(['POST'])
+def submit_openmalaria_workflow_view(request, workflow_id):
+    """API view pour la soumission OpenMalaria (délègue à process_openmalaria_submission)."""
+    return process_openmalaria_submission(workflow_id, request)
