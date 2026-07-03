@@ -33,6 +33,11 @@ jobs:
           script: |
             set -euo pipefail
             cd /opt/vc-uy
+            if [ -f deploy/nginx/manager-vc-uy.conf ]; then
+              cp deploy/nginx/manager-vc-uy.conf /etc/nginx/sites-available/manager-vc-uy.conf
+              nginx -t
+              systemctl reload nginx
+            fi
             docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production build manager-backend manager-frontend
             docker rm -f $(docker ps -aq --filter name=manager-backend) 2>/dev/null || true
             docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production up -d manager-backend manager-frontend
@@ -50,4 +55,6 @@ jobs:
       - name: Smoke test public URL
         run: |
           curl -sf https://manager-vc-uy.npe-techs.com/health/
+          curl -sf https://manager-vc-uy.npe-techs.com/api/health/
+          curl -sf https://manager-vc-uy.npe-techs.com/workflows/create | grep -qi 'html\|workflow\|VolunSys'
           curl -sf https://manager-vc-uy.npe-techs.com/ >/dev/null

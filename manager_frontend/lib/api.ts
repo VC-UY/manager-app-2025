@@ -39,14 +39,9 @@ function clearAuth() {
   clearAuthCookie();
 }
 
-// En navigateur: meme origine. En SSR/dev: URL explicite.
-const apiBase =
-  typeof window !== 'undefined'
-    ? ''
-    : process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002';
-
+// API sous /api/ pour ne pas entrer en conflit avec les pages Next.js (/workflows, /tasks, ...)
 const api = axios.create({
-  baseURL: apiBase,
+  baseURL: '/api',
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
