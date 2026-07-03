@@ -6,6 +6,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth import get_user_model
 import traceback
 import logging
+import threading
 
 from redis_communication.auth_client import register_manager
 
@@ -148,46 +149,36 @@ class RegisterSerializer(serializers.ModelSerializer):
 
             logger.info(f"Utilisateur créé localement avec succès, ID: {user.id}")
 
-            # Synchroniser avec le coordinateur
-            try:
-                logger.info(f"Synchronisation de l'utilisateur {user.username} avec le coordinateur...")
-                success, response = register_manager(
-                    username=user.username,
-                    email=user.email,
-                    password=validated_data['password'],  # Mot de passe en clair pour le coordinateur
-                    first_name=validated_data.get('first_name', ''),
-                    last_name=validated_data.get('last_name', ''),
-                    timeout=30
-                )
+            password_plain = validated_data['password']
 
-                if success:
+            def sync_coordinator():
+                try:
+                    success, response = register_manager(
+                        username=user.username,
+                        email=user.email,
+                        password=password_plain,
+                        first_name=validated_data.get('first_name', ''),
+                        last_name=validated_data.get('last_name', ''),
+                        timeout=8,
+                    )
+                    if not success:
+                        logger.warning(
+                            f"Synchronisation coordinateur differee echouee: {response.get('message', 'erreur')}"
+                        )
+                        return
+                    from workflows.models import User as UserModel
+                    db_user = UserModel.objects.get(pk=user.id)
                     remote_id = response.get('manager_id')
                     if remote_id:
-                        user.remote_id = remote_id
+                        db_user.remote_id = remote_id
                     token = response.get('token')
                     if token:
-                        user.coordinator_token = token
-                    else:
-                        from redis_communication.auth_client import login_manager
-                        login_ok, login_data = login_manager(
-                            username=user.username,
-                            password=validated_data['password'],
-                            timeout=30,
-                        )
-                        if login_ok and login_data.get('token'):
-                            user.coordinator_token = login_data['token']
-                            if login_data.get('manager_id'):
-                                user.remote_id = login_data['manager_id']
-                    user.save()
-                else:
-                    logger.warning(f"Échec de la synchronisation avec le coordinateur: {response.get('message', 'Erreur inconnue')}")
-                    # L'utilisateur est créé localement même si la synchro échoue
-                    # Il pourra être synchronisé plus tard
+                        db_user.coordinator_token = token
+                    db_user.save(update_fields=['remote_id', 'coordinator_token'])
+                except Exception as sync_error:
+                    logger.error(f"Synchronisation coordinateur en arriere-plan: {sync_error}")
 
-            except Exception as sync_error:
-                logger.error(f"Erreur lors de la synchronisation avec le coordinateur: {sync_error}")
-                # Ne pas échouer la création de l'utilisateur si la synchro échoue
-                # L'utilisateur peut être synchronisé manuellement plus tard
+            threading.Thread(target=sync_coordinator, daemon=True).start()
 
             return user
 

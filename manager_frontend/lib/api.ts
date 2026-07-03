@@ -15,7 +15,7 @@ function clearAuthCookie() {
 
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002',
-  timeout: 10000,
+  timeout: 60000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -84,7 +84,10 @@ api.interceptors.response.use(
 const extractErrorMessage = (error: any): string => {
   // Erreur réseau
   if (!error.response) {
-    return 'Impossible de contacter le serveur. Vérifiez que le serveur Django est démarré.';
+    if (error.code === 'ECONNABORTED') {
+      return 'Le serveur met trop de temps a repondre. Reessayez dans quelques secondes.';
+    }
+    return 'Impossible de contacter le serveur. Verifiez que le serveur Django est demarre.';
   }
   
   const { status, data } = error.response;
