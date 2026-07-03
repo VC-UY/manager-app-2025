@@ -17,11 +17,23 @@ if not logger.handlers:
     logger.addHandler(console_handler)
 
 
-def _sync_last_manager():
-    """Synchronise le dernier manager avec le coordinateur sans bloquer le demarrage."""
+def _bootstrap_redis():
+    """Initialise Redis et la synchro manager hors du chemin de demarrage HTTP."""
     try:
+        from .client import RedisClient
+        from .handlers import DEFAULT_HANDLERS
         from .auth_client import register_manager, login_manager
         from workflows.models import User
+
+        client = RedisClient.get_instance()
+        if not client.running:
+            client.start()
+
+        for channel, handler in DEFAULT_HANDLERS.items():
+            try:
+                client.subscribe(channel, handler)
+            except Exception as sub_err:
+                logger.error(f"Abonnement canal {channel}: {sub_err}")
 
         user = User.objects.get_last_inserted()
         if not user:
@@ -50,7 +62,6 @@ def _sync_last_manager():
                         'username': user.username,
                         'email': user.email,
                     }, f)
-                logger.debug("Manager enregistre avec succes")
             else:
                 logger.error(f"Erreur enregistrement manager: {data}")
                 return
@@ -71,7 +82,9 @@ def _sync_last_manager():
         else:
             logger.error(f"Erreur connexion manager: {data}")
     except Exception as exc:
-        logger.error(f"Synchronisation manager en arriere-plan: {exc}")
+        logger.error(f"Bootstrap Redis en arriere-plan: {exc}")
+        import traceback
+        logger.error(traceback.format_exc())
 
 
 class RedisCommunicationConfig(AppConfig):
@@ -84,21 +97,5 @@ class RedisCommunicationConfig(AppConfig):
             return
 
         logger.info("Initialisation du service de communication Redis...")
-
-        try:
-            from .client import RedisClient
-            from .handlers import DEFAULT_HANDLERS
-
-            client = RedisClient.get_instance()
-            if not client.running:
-                client.start()
-
-            for channel, handler in DEFAULT_HANDLERS.items():
-                client.subscribe(channel, handler)
-
-            threading.Thread(target=_sync_last_manager, daemon=True).start()
-            logger.debug("Service de communication Redis demarre")
-        except Exception as e:
-            logger.error(f"Erreur lors de l'initialisation du client Redis: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
+        threading.Thread(target=_bootstrap_redis, daemon=True).start()
+        logger.debug("Service de communication Redis demarre en arriere-plan")

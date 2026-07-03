@@ -68,10 +68,12 @@ class RedisClient:
         # Client Redis
         self.redis = redis.Redis(
             host=self.host,
-            port=self.port,
+            port=int(self.port),
             db=self.db,
             decode_responses=True,
             protocol=2,
+            socket_connect_timeout=5,
+            socket_timeout=5,
         )
         
         # PubSub pour les abonnements
