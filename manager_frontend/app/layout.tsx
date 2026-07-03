@@ -1,15 +1,12 @@
 // app/layout.tsx
 import './globals.css';
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
 import { AuthProvider } from '@/contexts/AuthContext';
 
-const inter = Inter({ subsets: ['latin'] });
-
-const siteUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '').replace(':8002', '') || 'https://manager-vc-uy.npe-techs.com';
+const siteUrl = 'https://manager-vc-uy.npe-techs.com';
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://manager-vc-uy.npe-techs.com'),
+  metadataBase: new URL(siteUrl),
   title: {
     default: 'VolunSys-UY1 Manager | Calcul volontaire',
     template: '%s | VolunSys Manager',
@@ -40,7 +37,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="fr">
-      <body className={inter.className}>
+      <body className="min-h-screen antialiased" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
