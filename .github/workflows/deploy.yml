@@ -36,9 +36,15 @@ jobs:
             docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production build manager-backend manager-frontend
             docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production up -d manager-backend manager-frontend
             docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production exec -T manager-backend python manage.py migrate --noinput
-            for i in 1 2 3 4 5 6; do
-              curl -sf -H "Host: localhost" http://127.0.0.1:8002/health/ && break
-              sleep 10
+            for i in 1 2 3 4 5 6 7 8 9 10; do
+              curl -sf -H "Host: manager-vc-uy.npe-techs.com" http://127.0.0.1:8002/health/ && break
+              sleep 6
             done
-            curl -sf -H "Host: localhost" http://127.0.0.1:8002/health/
+            curl -sf -H "Host: manager-vc-uy.npe-techs.com" http://127.0.0.1:8002/health/
+            curl -sf http://127.0.0.1:13000/ >/dev/null
             echo "Manager OK"
+
+      - name: Smoke test public URL
+        run: |
+          curl -sf https://manager-vc-uy.npe-techs.com/health/
+          curl -sf https://manager-vc-uy.npe-techs.com/ >/dev/null
