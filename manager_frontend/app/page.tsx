@@ -5,16 +5,16 @@ import Link from 'next/link';
 
 const steps = [
   {
-    title: 'Creer un workflow',
-    text: 'Definissez votre calcul, importez les donnees et lancez la soumission.',
+    title: 'Créer un workflow',
+    text: 'Définissez votre calcul, importez les données et lancez la soumission.',
   },
   {
     title: 'Distribution automatique',
-    text: 'Le coordinateur repartit les taches sur les machines volontaires disponibles.',
+    text: 'Le coordinateur répartit les tâches sur les machines volontaires disponibles.',
   },
   {
-    title: 'Suivre les resultats',
-    text: 'Consultez l avancement et telechargez les sorties une fois le traitement termine.',
+    title: 'Suivre les résultats',
+    text: 'Consultez l\'avancement et téléchargez les sorties une fois le traitement terminé.',
   },
 ];
 
@@ -51,7 +51,7 @@ export default function Home() {
                 boxShadow: '0 8px 24px rgba(0, 180, 240, 0.35)',
               }}
             >
-              S inscrire
+              S&apos;inscrire
             </Link>
           </div>
         </div>
@@ -73,11 +73,11 @@ export default function Home() {
               Soumettez vos calculs
             </span>
             <br />
-            <span className="text-cyan-300">sur le reseau VolunSys</span>
+            <span className="text-cyan-300">sur le réseau VolunSys</span>
           </h1>
           <p className="mt-6 max-w-xl text-lg text-white/85">
-            Interface manager pour creer des workflows, suivre les taches et recuperer les resultats
-            sur l infrastructure de calcul volontaire.
+            Interface manager pour créer des workflows, suivre les tâches et récupérer les résultats
+            sur l&apos;infrastructure de calcul volontaire.
           </p>
           <div className="mt-8 flex flex-wrap gap-4">
             <Link
@@ -103,7 +103,7 @@ export default function Home() {
         <div className="rounded-2xl border p-2" style={{ borderColor: 'rgba(0,180,240,0.3)' }}>
           <Image
             src="/images/architecture.svg"
-            alt="Schema Manager, Coordinateur et Volontaires"
+            alt="Schéma Manager, Coordinateur et Volontaires"
             width={640}
             height={400}
             className="w-full rounded-xl"
@@ -113,7 +113,7 @@ export default function Home() {
       </section>
 
       <section className="container mx-auto px-6 pb-20">
-        <h2 className="mb-8 text-center text-2xl font-bold text-white">Comment ca marche</h2>
+        <h2 className="mb-8 text-center text-2xl font-bold text-white">Comment ça marche</h2>
         <div className="grid gap-6 md:grid-cols-3">
           {steps.map((step, index) => (
             <div
@@ -124,7 +124,7 @@ export default function Home() {
                 border: '2px solid rgba(0, 180, 240, 0.3)',
               }}
             >
-              <p className="mb-3 text-sm font-bold text-cyan-300">Etape {index + 1}</p>
+              <p className="mb-3 text-sm font-bold text-cyan-300">Étape {index + 1}</p>
               <h3 className="text-lg font-bold text-white">{step.title}</h3>
               <p className="mt-2 text-sm text-white/75">{step.text}</p>
             </div>
@@ -133,7 +133,7 @@ export default function Home() {
       </section>
 
       <footer className="border-t py-8 text-center text-sm text-cyan-300/80" style={{ borderColor: 'rgba(0,180,240,0.2)' }}>
-        VolunSys-UY1 Manager, Universite de Yaounde I
+        VolunSys-UY1 Manager, Université de Yaoundé I
       </footer>
     </main>
   );
