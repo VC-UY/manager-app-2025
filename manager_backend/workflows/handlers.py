@@ -120,7 +120,9 @@ def submit_workflow_handler(workflow_id: str, callback: Optional[Callable[[Dict[
         elif workflow.workflow_type == WorkflowType.MATRIX_MULTIPLICATION:
             estimated_resources = estimate_matrix_multiplication_resources(workflow.input_data_size)
         elif workflow.workflow_type == WorkflowType.OPEN_MALARIA:
-            estimated_resources = estimate_open_malaria_resources(workflow.metadata.get('num_task', 4))
+            estimated_resources = estimate_open_malaria_resources(
+                (workflow.metadata or {}).get('num_tasks', 2)
+            )
         elif workflow.workflow_type == WorkflowType.CUSTOM:
             estimated_resources = estimate_custom_resources(workflow.metadata)
         else:

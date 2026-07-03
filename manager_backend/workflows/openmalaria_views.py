@@ -28,27 +28,46 @@ def process_openmalaria_submission(workflow_id, request=None):
         JsonResponse: Statut de la soumission.
     """
     try:
-        # Valider les paramètres
-        num_tasks = 4  # request.data.get('num_tasks')
-        population_per_task = 2000  # request.data.get('population_per_task')
-        
-        if not isinstance(num_tasks, int) or not isinstance(population_per_task, int):
-            return JsonResponse({
-                'error': 'num_tasks et population_per_task doivent être des entiers'
-            }, status=400)
-        
-        if num_tasks < 1 or population_per_task < 1:
-            return JsonResponse({
-                'error': 'num_tasks et population_per_task doivent être positifs'
-            }, status=400)
-        
         # Récupérer le workflow
         workflow = get_object_or_404(Workflow, id=workflow_id)
-        
+
         if workflow.workflow_type != WorkflowType.OPEN_MALARIA:
             return JsonResponse({
                 'error': 'Le workflow doit être de type OPEN_MALARIA'
             }, status=400)
+
+        # Parametres de demo (petits pour un test propre et rapide)
+        metadata = workflow.metadata or {}
+        num_tasks = int(metadata.get('num_tasks', 2))
+        population_per_task = int(metadata.get('population_per_task', 500))
+        if request is not None and hasattr(request, 'data'):
+            if request.data.get('num_tasks') is not None:
+                num_tasks = int(request.data.get('num_tasks'))
+            if request.data.get('population_per_task') is not None:
+                population_per_task = int(request.data.get('population_per_task'))
+
+        if num_tasks < 1 or population_per_task < 1:
+            return JsonResponse({
+                'error': 'num_tasks et population_per_task doivent être positifs'
+            }, status=400)
+
+        # Chemins de travail persistants
+        data_root = '/data' if os.path.isdir('/data') else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if not workflow.executable_path:
+            workflow.executable_path = os.path.join(
+                data_root, 'workflow_data', str(workflow.owner_id or 'anon'), str(workflow.id)
+            )
+        if not workflow.input_path:
+            workflow.input_path = os.path.join(workflow.executable_path, 'inputs')
+        if not workflow.output_path:
+            workflow.output_path = os.path.join(workflow.executable_path, 'outputs')
+        os.makedirs(workflow.executable_path, exist_ok=True)
+        os.makedirs(workflow.input_path, exist_ok=True)
+        os.makedirs(workflow.output_path, exist_ok=True)
+        metadata['num_tasks'] = num_tasks
+        metadata['population_per_task'] = population_per_task
+        workflow.metadata = metadata
+        workflow.save()
         
         # Notifier le début de la soumission
         notify_event('workflow_status_change', {
@@ -119,18 +138,7 @@ def process_openmalaria_submission(workflow_id, request=None):
                 'response': response
             }, status=400)
         
-        # Définir output_path si non défini
-        if not workflow.output_path:
-            if workflow.executable_path:
-                workflow.output_path = os.path.join(workflow.executable_path, 'outputs')
-            else:
-                # Créer un chemin par défaut basé sur l'ID du workflow
-                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                workflow.output_path = os.path.join(base_dir, 'workflow_outputs', str(workflow_id))
-
-        # Créer le dossier de sortie s'il n'existe pas
-        os.makedirs(workflow.output_path, exist_ok=True)
-        logger.info(f"Dossier de sortie créé: {workflow.output_path}")
+        logger.info(f"Dossier de sortie: {workflow.output_path}")
 
         # Mettre à jour le statut
         workflow.status = WorkflowStatus.SPLITTING
@@ -272,6 +280,8 @@ def process_openmalaria_submission(workflow_id, request=None):
                                 task_id = task_info['task_id']
                                 task = Task.objects.get(id=task_id)
                                 
+                                from redis_communication.utils import build_task_file_transfer_info
+                                transfer = build_task_file_transfer_info(workflow, task, server_port)
                                 enriched_task = {
                                     'task_id': task_id,
                                     'name': task.name,
@@ -285,14 +295,7 @@ def process_openmalaria_submission(workflow_id, request=None):
                                     'workflow_id': str(workflow.id),
                                     'parameters': task.parameters,
                                     'estimated_execution_time': task.estimated_max_time,
-                                    'input_data': {
-                                        'files': task.input_files,
-                                        'file_server': {
-                                            'host': server_ip,
-                                            'port': server_port,
-                                            'base_url': f'http://{server_ip}:{server_port}'
-                                        }
-                                    },
+                                    'input_data': transfer,
                                     'input_data_size': task.input_size,
                                     'docker_information': task.docker_info or {}
                                 }

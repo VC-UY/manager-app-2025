@@ -71,19 +71,19 @@ def download_cifar10_if_needed(dataset_path):
     
 
 def download_cifar100_if_needed(dataset_path):
-    cifar100_dir = os.path.join(dataset_path, "cifar-100-batches-py")
+    cifar100_dir = os.path.join(dataset_path, "cifar-100-python")
     archive_path = os.path.join(dataset_path, "cifar-100-python.tar.gz")
 
-    if os.path.exists(cifar100_dir):
+    if os.path.exists(os.path.join(cifar100_dir, "train")):
         return  # Déjà extrait
 
+    os.makedirs(dataset_path, exist_ok=True)
     if not os.path.exists(archive_path):
-        os.makedirs(dataset_path)
-        logger.warning(f"⬇️ Téléchargement du dataset CIFAR-100 sur {archive_path}")
+        logger.warning(f"Telechargement du dataset CIFAR-100 sur {archive_path}")
         url = "https://www.cs.toronto.edu/~kriz/cifar-100-python.tar.gz"
         urllib.request.urlretrieve(url, archive_path)
 
-    logger.warning(f"📦 Extraction du dataset CIFAR-100 sur {archive_path}")
+    logger.warning(f"Extraction du dataset CIFAR-100 sur {archive_path}")
     with tarfile.open(archive_path, "r:gz") as tar:
         tar.extractall(path=dataset_path)
 
@@ -354,7 +354,7 @@ def generate_openmalaria_scenario(population_size, output_dir, shard_id):
       <EIRDaily>0.3815</EIRDaily>
       <EIRDaily>0.3815</EIRDaily>
       <EIRDaily>0.0629</EIRDaily>
-      <EIRDaily>0.0629</EIRDaily>generate_openmalaria_scenario
+      <EIRDaily>0.0629</EIRDaily>
       <EIRDaily>0.0629</EIRDaily>
       <EIRDaily>0.0629</EIRDaily>
       <EIRDaily>0.0629</EIRDaily>
@@ -1176,34 +1176,35 @@ def split_ml_training_workflow(workflow_instance: Workflow, logger:logging.Logge
         dataset = pickle.load(f, encoding='latin1')
     dataset_len = len(dataset["data"])
 
-    num_shards = estimate_required_shards(dataset_len, min_resources["min_ram"])
-    
+    # Pour une demo propre: 2 a 4 shards max
+    metadata = workflow_instance.metadata or {}
+    num_shards = int(metadata.get("num_tasks") or min(4, max(2, estimate_required_shards(dataset_len, min_resources["min_ram"]))))
+
     # Étape 3: appeler le script de découpage
     from workflows.examples.cifar100_training.split_dataset import split_dataset
+    samples_per_shard = int(metadata.get("samples_per_shard", 512))
     logger.warning(f"Appel de la fonction de decouppage de ml. Dataset path: {dataset_path}, Output path: {input_dir}")
-    # Utiliser le chemin du dataset pour l'entrée et le chemin de base pour la sortie
-    split_dataset(num_shards, path=input_dir, dataset_path=dataset_path, logger=logger)
+    os.makedirs(input_dir, exist_ok=True)
+    split_dataset(
+        num_shards,
+        path=input_dir,
+        dataset_path=dataset_path,
+        logger=logger,
+        samples_per_shard=samples_per_shard,
+    )
     logger.warning(f"Decouppage en {num_shards} shards Ok.")
     logger.warning("Creation de taches.")
 
-    # Étape 4: création des tâches pour chaque shard
-    # docker_img = {
-    #     "name": "traning-test",
-    #     "tag": "latest"
-    # }
-
+    # Image Docker d'entrainement (a builder sur chaque volontaire)
     docker_img = {
-        "name": "cirfar100-train",
-        "tag": "latest"
+        "name": "vcuy-ml-train",
+        "tag": "latest",
+        "image_name": "vcuy-ml-train:latest",
     }
     tasks = []
     for i in range(num_shards):
-        input_size = os.path.getsize(os.path.join(input_dir, f"shard_{i}/data.pkl")) // (1024 * 1024 )  # Convertir en Mo
-        # if (input_size > (min_resources["disk"] * 1024)):  # Convertir Go en Mo
-        #     logger.error(f"Shard {i} exceeds the minimum disk requirement.")   # Convertir Go en Mo
-        #     continue
+        input_size = max(1, os.path.getsize(os.path.join(input_dir, f"shard_{i}/data.pkl")) // (1024 * 1024))
 
-        # Créer la tâche pour chaque shard
         task = Task.objects.create(
             workflow=workflow_instance,
             name=f"Train Shard {i}",
@@ -1211,7 +1212,7 @@ def split_ml_training_workflow(workflow_instance: Workflow, logger:logging.Logge
             command="python train_on_shard.py",
             parameters=[],
             input_files=[f"shard_{i}/data.pkl"],
-            output_files=[f"shard_{i}/output/model.pth", f"shard_{i}/output/metrics.json"],
+            output_files=[f"model.pt", f"metrics.json"],
             status= TaskStatus.CREATED,
             parent_task=None,
             is_subtask=False,
@@ -1254,9 +1255,11 @@ def split_openmalaria_workflow(workflow_instance: Workflow, num_tasks: int, popu
     
     docker_img = {
         "name": "malaria-exp",
-        "tag": "latest"
+        "tag": "latest",
+        "image_name": "malaria-exp:latest",
     }
-    
+    os.makedirs(input_dir, exist_ok=True)
+
     tasks = []
     for i in range(num_tasks):
         # Générer le fichier de scénario
@@ -1265,19 +1268,19 @@ def split_openmalaria_workflow(workflow_instance: Workflow, num_tasks: int, popu
             output_dir=os.path.join(input_dir, f"shard_{i}"),
             shard_id=i
         )
-        
+
         # Calculer la taille du fichier d'entrée
-        input_size = os.path.getsize(scenario_path) // (1024 * 1024)  # Convertir en Mo
-        
+        input_size = max(1, os.path.getsize(scenario_path) // (1024 * 1024))
+
         # Créer la tâche
         task = Task.objects.create(
             workflow=workflow_instance,
             name=f"OpenMalaria Shard {i}",
             description=f"Simulation OpenMalaria sur population {population_per_task}",
-            command="/openmalaria/build/openMalaria -s /input/scenario.xml  -o /output/output.txt",
+            command="python run_simulation.py",
             parameters=[],
             input_files=[f"shard_{i}/scenario.xml"],
-            output_files=[f"shard_{i}/output/output.txt"],
+            output_files=[f"output.txt"],
             status=TaskStatus.CREATED,
             parent_task=None,
             is_subtask=False,

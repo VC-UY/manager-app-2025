@@ -266,6 +266,18 @@ def handle_task_status(channel: str, message: Message):
                 port = file_server.get('port')
                 path = file_server.get('path', '/files/')
                 output_files = file_server.get('output_files', [])
+
+                # Sorties deja poussees via POST /api/tasks/<id>/outputs/
+                if file_server.get('uploaded') and task.output_files:
+                    task.status = TaskStatus.COMPLETED
+                    task.end_time = timezone.now()
+                    task.progress = 100
+                    task.save()
+                    volunteer_task.save()
+                    final_status = check_and_finalize_workflow(workflow)
+                    if final_status == WorkflowStatus.PARTIAL_FAILURE:
+                        reassign_failed_tasks(workflow)
+                    return True
                 
                 if port and output_files:
                     # Créer le répertoire de sortie pour cette tâche

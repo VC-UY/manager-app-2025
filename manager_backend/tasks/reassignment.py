@@ -8,7 +8,7 @@ import uuid
 from django.utils import timezone
 
 from redis_communication.client import RedisClient
-from redis_communication.utils import get_local_ip, get_manager_login_token
+from redis_communication.utils import get_manager_login_token, build_task_file_transfer_info
 from tasks.models import Task, TaskStatus
 from tasks.scheduller import assign_workflow_to_volunteers
 from tasks.workflow_utils import dependencies_satisfied
@@ -30,7 +30,8 @@ def _get_available_volunteers_from_coordinator(workflow: Workflow) -> list:
     return []
 
 
-def _build_task_payload(task: Task, server_ip: str, server_port: int) -> dict:
+def _build_task_payload(task: Task, server_port: int = None) -> dict:
+    transfer = build_task_file_transfer_info(task.workflow, task, server_port)
     return {
         'task_id': str(task.id),
         'name': task.name,
@@ -44,14 +45,7 @@ def _build_task_payload(task: Task, server_ip: str, server_port: int) -> dict:
         'workflow_id': str(task.workflow_id),
         'parameters': task.parameters,
         'estimated_execution_time': task.estimated_max_time,
-        'input_data': {
-            'files': task.input_files,
-            'file_server': {
-                'host': server_ip,
-                'port': server_port,
-                'base_url': f'http://{server_ip}:{server_port}',
-            },
-        },
+        'input_data': transfer,
         'input_data_size': task.input_size,
         'docker_information': task.docker_info or {},
     }
@@ -59,7 +53,6 @@ def _build_task_payload(task: Task, server_ip: str, server_port: int) -> dict:
 
 def _publish_assignments(workflow: Workflow, assignment_result: dict, server_port: int):
     redis_client = RedisClient.get_instance()
-    server_ip = get_local_ip()
     token = get_manager_login_token()
 
     for volunteer_id, task_list in assignment_result.items():
@@ -67,7 +60,7 @@ def _publish_assignments(workflow: Workflow, assignment_result: dict, server_por
         for task_info in task_list:
             try:
                 task = Task.objects.get(id=task_info['task_id'])
-                enriched_tasks.append(_build_task_payload(task, server_ip, server_port))
+                enriched_tasks.append(_build_task_payload(task, server_port))
             except Task.DoesNotExist:
                 logger.error("Tâche %s introuvable lors de la réassignation", task_info.get('task_id'))
 

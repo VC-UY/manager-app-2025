@@ -32,7 +32,37 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         return Workflow.objects.filter(owner=self.request.user).order_by('-created_at')
 
     def perform_create(self, serializer):
-        serializer.save(owner=self.request.user)
+        import os
+        from django.conf import settings
+
+        workflow = serializer.save(owner=self.request.user)
+        data_root = '/data' if os.path.isdir('/data') else str(getattr(settings, 'BASE_DIR', '/tmp'))
+        base_dir = os.path.join(
+            data_root,
+            'workflow_data',
+            str(self.request.user.id),
+            str(workflow.id),
+        )
+        if not workflow.executable_path:
+            workflow.executable_path = base_dir
+        if not workflow.input_path:
+            workflow.input_path = os.path.join(workflow.executable_path, 'inputs')
+        if not workflow.output_path:
+            workflow.output_path = os.path.join(workflow.executable_path, 'outputs')
+        os.makedirs(workflow.executable_path, exist_ok=True)
+        os.makedirs(workflow.input_path, exist_ok=True)
+        os.makedirs(workflow.output_path, exist_ok=True)
+        # Parametres de demo pour ML / OpenMalaria
+        metadata = workflow.metadata or {}
+        if workflow.workflow_type == 'ML_TRAINING':
+            metadata.setdefault('num_tasks', 2)
+            metadata.setdefault('samples_per_shard', 512)
+        if workflow.workflow_type == 'OPEN_MALARIA':
+            metadata.setdefault('num_tasks', 2)
+            metadata.setdefault('population_per_task', 500)
+        workflow.metadata = metadata
+        workflow.save()
+
 
     def perform_update(self, serializer):
         serializer.save(owner=self.request.user)
@@ -46,6 +76,24 @@ def process_workflow_submission(workflow_id):
     try:
         # Récupérer le workflow
         workflow = get_object_or_404(Workflow, id=workflow_id)
+        import os
+        from django.conf import settings
+        if not workflow.executable_path:
+            data_root = '/data' if os.path.isdir('/data') else str(getattr(settings, 'BASE_DIR', '/tmp'))
+            workflow.executable_path = os.path.join(
+                data_root,
+                'workflow_data',
+                str(workflow.owner_id or 'anon'),
+                str(workflow.id),
+            )
+        if not workflow.output_path:
+            workflow.output_path = os.path.join(workflow.executable_path, 'outputs')
+        if not workflow.input_path:
+            workflow.input_path = os.path.join(workflow.executable_path, 'inputs')
+        os.makedirs(workflow.executable_path, exist_ok=True)
+        os.makedirs(workflow.output_path, exist_ok=True)
+        os.makedirs(workflow.input_path, exist_ok=True)
+        workflow.save(update_fields=['executable_path', 'output_path', 'input_path', 'updated_at'])
         
         # Notifier le début du processus de soumission
         from websocket_service.client import notify_event
@@ -203,6 +251,8 @@ def process_workflow_submission(workflow_id):
                             task_id = task_info['task_id']
                             task = Task.objects.get(id=task_id)
                             
+                            from redis_communication.utils import build_task_file_transfer_info
+                            transfer = build_task_file_transfer_info(workflow, task, file_server_port)
                             # Ajouter les informations complètes de la tâche
                             enriched_task = {
                                 'task_id': task_id,
@@ -210,14 +260,7 @@ def process_workflow_submission(workflow_id):
                                 'workflow_id': str(workflow.id),
                                 'parameters': task.parameters,
                                 'estimated_execution_time': task.estimated_max_time,
-                                'input_data': {
-                                    'files': task.input_files,
-                                    'file_server': {
-                                        'host': server_ip,
-                                        'port': file_server_port,
-                                        'base_url': f'http://{server_ip}:{file_server_port}'
-                                    }
-                                },
+                                'input_data': transfer,
                                 'input_data_size': task.input_size,
                                 'docker_information': task.docker_info if hasattr(task, 'docker_info') else {}
                             }

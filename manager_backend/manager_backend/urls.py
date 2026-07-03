@@ -18,9 +18,21 @@ from django.contrib import admin
 from django.urls import path, include
 from manager_backend.health import health_check
 
+from tasks.file_transfer import serve_workflow_input_file, upload_task_outputs
+
 urlpatterns = [
     path('health/', health_check, name='health'),
     path('admin/', admin.site.urls),
+    path(
+        'workflow-files/<uuid:workflow_id>/<path:file_path>',
+        serve_workflow_input_file,
+        name='workflow-input-file',
+    ),
+    path(
+        'tasks/<uuid:task_id>/outputs/',
+        upload_task_outputs,
+        name='task-output-upload',
+    ),
     path('workflows/', include('workflows.urls')),
     path('tasks/', include('tasks.urls')),
     path('volunteers/', include('volunteers.urls')),

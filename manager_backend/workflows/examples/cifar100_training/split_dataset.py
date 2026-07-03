@@ -3,7 +3,7 @@
 import pickle, os
 import numpy as np
 
-def split_dataset(shards=4, path="./data/inputs", dataset_path="./data", logger=None):
+def split_dataset(shards=4, path="./data/inputs", dataset_path="./data", logger=None, samples_per_shard=512):
     try:
         if logger: logger.warning(f"Chargement du dataset CIFAR-100 depuis {dataset_path}")
 
@@ -12,14 +12,21 @@ def split_dataset(shards=4, path="./data/inputs", dataset_path="./data", logger=
             raw_data = pickle.load(f, encoding="latin1")
 
         data = raw_data["data"]  # shape (50000, 3072)
-        labels = raw_data["fine_labels"]
+        labels = np.asarray(raw_data["fine_labels"])
 
         data = data.reshape(-1, 3, 32, 32).transpose(0, 2, 3, 1)  # (N, 32, 32, 3)
 
-        total = len(data)
-        size = total // shards
+        # Demo rapide: limiter le nombre d'echantillons par shard
+        samples_per_shard = max(32, int(samples_per_shard or 512))
+        total_needed = min(len(data), shards * samples_per_shard)
+        data = data[:total_needed]
+        labels = labels[:total_needed]
+        size = max(1, len(data) // shards)
 
-        if logger: logger.warning(f"Découpage en {shards} shards, taille de shard ≈ {size}")
+        if logger:
+            logger.warning(
+                f"Découpage en {shards} shards, ~{size} echantillons/shard (cap={samples_per_shard})"
+            )
 
         for i in range(shards):
             shard_dir = os.path.join(path, f"shard_{i}")

@@ -121,3 +121,31 @@ def get_local_ip():
     except Exception as e:
         logger.error(f"Erreur lors de la récupération de l'IP locale : {e}")
         return None
+
+
+def get_manager_public_url():
+    """URL publique du manager (accessible par les volontaires hors Docker)."""
+    import os
+    return (
+        os.environ.get("MANAGER_PUBLIC_URL")
+        or os.environ.get("PUBLIC_MANAGER_URL")
+        or "https://manager-vc-uy.npe-techs.com"
+    ).rstrip("/")
+
+
+def build_task_file_transfer_info(workflow, task, file_server_port=None):
+    """
+    Metadonnees de transfert de fichiers pour une tache assignee.
+    Utilise l'API publique HTTPS plutot que le serveur de fichiers local.
+    """
+    public_url = get_manager_public_url()
+    return {
+        "files": task.input_files,
+        "file_server": {
+            "host": public_url.replace("https://", "").replace("http://", ""),
+            "port": 443 if public_url.startswith("https") else 80,
+            "base_url": f"{public_url}/api/workflow-files/{workflow.id}",
+            "mode": "public_api",
+        },
+        "result_upload_url": f"{public_url}/api/tasks/{task.id}/outputs/",
+    }
