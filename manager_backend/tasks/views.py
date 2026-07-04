@@ -125,3 +125,76 @@ class TaskViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(tasks, many=True)
         
         return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def retry(self, request, pk=None):
+        """
+        Relance une tâche échouée (ou assignée expirée) vers un volontaire en ligne.
+        """
+        from tasks.models import TaskStatus
+        from tasks.assignment import assign_and_publish
+        from tasks.recovery import recover_pending_and_failed_work
+        from volunteers.models import VolunteerTask as VT
+        from volunteers.presence import get_online_volunteers_data
+
+        task = self.get_object()
+        workflow = task.workflow
+
+        if task.status not in (TaskStatus.FAILED, TaskStatus.ASSIGNED, TaskStatus.CREATED):
+            return Response(
+                {"error": f"Impossible de relancer une tâche au statut {task.status}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        max_retries = workflow.retry_count or 3
+        if task.status == TaskStatus.FAILED and (task.attempts or 0) >= max_retries:
+            return Response(
+                {
+                    "error": (
+                        f"Nombre max de tentatives atteint ({task.attempts}/{max_retries}). "
+                        "Resoumettez le workflow entier."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if task.status == TaskStatus.FAILED:
+            VT.objects.filter(task=task).update(status="FAILED")
+            task.status = TaskStatus.CREATED
+            task.progress = 0
+            task.end_time = None
+            details = dict(task.error_details or {})
+            details.pop("attempts_counted", None)
+            task.error_details = details
+            task.save()
+        elif task.status == TaskStatus.ASSIGNED:
+            VT.objects.filter(task=task, accepted_at__isnull=True).update(status="EXPIRED")
+            task.status = TaskStatus.CREATED
+            task.save(update_fields=["status"])
+
+        online = get_online_volunteers_data()
+        if not online:
+            return Response(
+                {
+                    "success": False,
+                    "error": "Aucun volontaire en ligne. La tâche est prête et sera assignée dès qu'un volontaire se reconnecte.",
+                    "task_id": str(task.id),
+                    "task_status": task.status,
+                },
+                status=status.HTTP_202_ACCEPTED,
+            )
+
+        result = assign_and_publish(workflow, online)
+        if result.get("assigned", 0) == 0:
+            result = recover_pending_and_failed_work(online)
+
+        task.refresh_from_db()
+        return Response(
+            {
+                "success": True,
+                "task_id": str(task.id),
+                "task_status": task.status,
+                "workflow_id": str(workflow.id),
+                "result": result,
+            }
+        )

@@ -70,14 +70,40 @@ def mark_online(
         coordinator_volunteer_id=str(coordinator_volunteer_id),
         defaults=defaults,
     )
-    # update_or_create avec last_seen dans defaults suffit si auto_now est désactivé
-    if not created and "last_seen" not in defaults:
-        Volunteer.objects.filter(pk=volunteer.pk).update(last_seen=timezone.now())
+    volunteer.refresh_from_db()
 
-    if created or previous_status != volunteer.status:
+    came_back = (not created) and previous_status in (None, "offline", "OFFLINE")
+    status_changed = created or previous_status != volunteer.status
+
+    if status_changed:
         _notify_presence(volunteer)
 
+    # Volontaire de retour : relancer immédiatement les tâches en attente / échouées
+    if created or came_back:
+        logger.info(
+            "Volontaire de retour en ligne: %s (%s) — reprise des travaux",
+            volunteer.name,
+            coordinator_volunteer_id,
+        )
+        _trigger_recovery()
+
     logger.debug("Volontaire en ligne: %s (%s)", volunteer.name, coordinator_volunteer_id)
+
+
+def _trigger_recovery() -> None:
+    """Lance la reprise des tâches en arrière-plan (évite de bloquer le heartbeat)."""
+    import threading
+
+    def _run():
+        try:
+            from tasks.recovery import recover_pending_and_failed_work
+
+            result = recover_pending_and_failed_work()
+            logger.info("Recovery après retour volontaire: %s", result)
+        except Exception as exc:
+            logger.warning("Recovery après retour volontaire échouée: %s", exc)
+
+    threading.Thread(target=_run, name="volunteer-recovery", daemon=True).start()
 
 
 def mark_offline(coordinator_volunteer_id: str, reason: str = "timeout") -> None:

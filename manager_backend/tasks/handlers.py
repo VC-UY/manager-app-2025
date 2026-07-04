@@ -553,14 +553,21 @@ def handle_task_status(channel: str, message: Message):
             else:
                 logger.error(f"Erreur non gérée pour la tâche {task.name}: {error_type} - {error_message}")
                 volunteer_task.status = 'FAILED'
-                task.increment_attempts()
+                volunteer_task.save()
+                # Une seule incrémentation d'attempts à l'échec
+                details = dict(task.error_details or {})
+                if not details.get('attempts_counted'):
+                    task.increment_attempts()
+                    details['attempts_counted'] = True
+                    details['error_type'] = error_type
+                    details['error_message'] = error_message
+                    task.error_details = details
+                    task.save(update_fields=['error_details'])
 
                 from tasks.reassignment import reassign_failed_tasks
-                from tasks.workflow_utils import workflow_task_counts
 
-                counts = workflow_task_counts(workflow)
-                if counts['running'] == 0:
-                    reassign_failed_tasks(workflow)
+                # Réassigne dès qu'un volontaire en ligne existe (pas seulement si plus rien ne tourne)
+                reassign_failed_tasks(workflow)
         
         return True
 

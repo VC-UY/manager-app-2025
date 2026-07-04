@@ -207,24 +207,37 @@ def assign_and_publish(
     """
     volunteers_data = _filter_online_volunteers(volunteers_data)
     if not volunteers_data:
-        workflow.status = WorkflowStatus.PENDING
+        if workflow.tasks.filter(status=TaskStatus.FAILED).exists():
+            workflow.status = WorkflowStatus.PARTIAL_FAILURE
+        elif workflow.status not in (
+            WorkflowStatus.RUNNING,
+            WorkflowStatus.PARTIAL_FAILURE,
+            WorkflowStatus.FAILED,
+        ):
+            workflow.status = WorkflowStatus.PENDING
         workflow.save(update_fields=["status", "updated_at"])
         return {
             "status": "waiting",
-            "message": "Soumission OK. En attente de volontaires en ligne.",
+            "message": "En attente de volontaires en ligne.",
             "assigned": 0,
         }
 
+    prev_status = workflow.status
     workflow.status = WorkflowStatus.ASSIGNING
     workflow.save(update_fields=["status", "updated_at"])
 
     assignment = assign_workflow_to_volunteers(workflow, volunteers_data)
     if not assignment:
-        workflow.status = WorkflowStatus.PENDING
+        if workflow.tasks.filter(status=TaskStatus.FAILED).exists():
+            workflow.status = WorkflowStatus.PARTIAL_FAILURE
+        elif prev_status in (WorkflowStatus.RUNNING, WorkflowStatus.PARTIAL_FAILURE):
+            workflow.status = prev_status
+        else:
+            workflow.status = WorkflowStatus.PENDING
         workflow.save(update_fields=["status", "updated_at"])
         return {
             "status": "waiting",
-            "message": "Soumission OK. Aucune tache assignable pour le moment.",
+            "message": "Aucune tache assignable pour le moment.",
             "assigned": 0,
         }
 
