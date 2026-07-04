@@ -192,6 +192,12 @@ def handle_task_progress(channel: str, message: Message):
             'volunteer': volunteer.name if volunteer_task else None,
             'message': f"Progression de la tâche {task.name}: {progress_value}%",
         })
+
+        vid = str(getattr(volunteer, 'coordinator_volunteer_id', None) or '')
+        if vid:
+            from tasks.coordinator_sync import publish_task_progress
+            publish_task_progress(workflow, task, vid, progress_value)
+
         return True
     except Workflow.DoesNotExist:
         logger.error(f"Le workflow {workflow_id} n'existe pas")
@@ -290,6 +296,8 @@ def handle_task_status(channel: str, message: Message):
                     task.progress = 100
                     task.save()
                     volunteer_task.save()
+                    from tasks.coordinator_sync import notify_coordinator_completion
+                    notify_coordinator_completion(workflow, task, volunteer, task.results)
                     final_status = check_and_finalize_workflow(workflow)
                     if final_status == WorkflowStatus.PARTIAL_FAILURE:
                         reassign_failed_tasks(workflow)
@@ -336,6 +344,8 @@ def handle_task_status(channel: str, message: Message):
                         volunteer_task.save()
                         task.save()
                         logger.info(f"Tâche {task.name} terminée avec succès, fichiers téléchargés")
+                        from tasks.coordinator_sync import notify_coordinator_completion
+                        notify_coordinator_completion(workflow, task, volunteer, {'files': downloaded_files})
                         
                         from redis_communication.client import RedisClient
                         from redis_communication.utils import get_manager_login_token
@@ -433,6 +443,10 @@ def handle_task_status(channel: str, message: Message):
                 'volunteer': volunteer.name,
                 'message': f"Progression de la tâche {task.name}: {progress_value}%",
             })
+            vid = str(getattr(volunteer, 'coordinator_volunteer_id', None) or '')
+            if vid:
+                from tasks.coordinator_sync import publish_task_progress
+                publish_task_progress(workflow, task, vid, progress_value)
             logger.info(
                 "Tâche %s en cours par %s — progression %s%%",
                 task.name, volunteer.name, progress_value,
@@ -494,6 +508,8 @@ def handle_task_status(channel: str, message: Message):
             # La tâche a échoué
             task.status = TaskStatus.FAILED
             task.end_time = timezone.now()
+            from tasks.coordinator_sync import notify_coordinator_failure
+            notify_coordinator_failure(workflow, task, volunteer, error_message)
 
             task.error_details = {
                 'error_type': error_type,
@@ -668,8 +684,11 @@ def handle_task_complete(channel: str, message: Message):
 
             # Mettre à jour le statut de la tâche
             task.status = TaskStatus.COMPLETED
+            task.progress = 100
             task.save()
             logger.info(f"Statut de la tâche {task.name} mis à jour: COMPLETED")
+            from tasks.coordinator_sync import notify_coordinator_completion
+            notify_coordinator_completion(workflow, task, volunteer, result)
 
             # Notifier le changement de statut via WebSocket
             from websocket_service.client import notify_event
@@ -712,8 +731,11 @@ def handle_task_complete(channel: str, message: Message):
         
         # Mettre à jour le statut de la tâche (cas sans assignation préalable)
         task.status = TaskStatus.COMPLETED
+        task.progress = 100
         task.save()
         logger.info(f"Statut de la tâche {task.name} mis à jour: COMPLETED")
+        from tasks.coordinator_sync import notify_coordinator_completion
+        notify_coordinator_completion(workflow, task, volunteer, result)
 
         from websocket_service.client import notify_event
         notify_event('task_status_change', {

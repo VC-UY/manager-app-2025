@@ -99,3 +99,104 @@ def publish_task_status(
         )
     except Exception as exc:
         logger.warning("Publication task/status_sync échouée pour %s: %s", task.id, exc)
+
+
+def publish_task_progress(
+    workflow,
+    task,
+    volunteer_id: str,
+    progress: float,
+) -> None:
+    """Propage la progression vers le Coordinateur (canal task/progress)."""
+    token = get_manager_login_token(getattr(workflow, "owner", None))
+    sender = str(getattr(getattr(workflow, "owner", None), "remote_id", None) or "manager")
+    try:
+        proxy_publish(
+            "task/progress",
+            {
+                "task_id": str(task.id),
+                "workflow_id": str(workflow.id),
+                "volunteer_id": volunteer_id,
+                "progress": float(progress),
+                "status": getattr(task, "status", "RUNNING"),
+            },
+            token=token,
+            sender_id=sender,
+            request_id=str(uuid.uuid4()),
+            to_volunteers=False,
+        )
+    except Exception as exc:
+        logger.warning("Publication task/progress échouée pour %s: %s", task.id, exc)
+
+
+def publish_task_completed(
+    workflow,
+    task,
+    volunteer_id: str,
+    results: Optional[dict] = None,
+) -> None:
+    """Notifie le Coordinateur qu'une tâche est terminée."""
+    token = get_manager_login_token(getattr(workflow, "owner", None))
+    sender = str(getattr(getattr(workflow, "owner", None), "remote_id", None) or "manager")
+    try:
+        proxy_publish(
+            "task/completed",
+            {
+                "task_id": str(task.id),
+                "workflow_id": str(workflow.id),
+                "volunteer_id": volunteer_id,
+                "status": "COMPLETED",
+                "progress": 100,
+                "results": results or {},
+            },
+            token=token,
+            sender_id=sender,
+            request_id=str(uuid.uuid4()),
+            to_volunteers=False,
+        )
+    except Exception as exc:
+        logger.warning("Publication task/completed échouée pour %s: %s", task.id, exc)
+
+
+def publish_task_failed(
+    workflow,
+    task,
+    volunteer_id: str,
+    error: str = "",
+) -> None:
+    """Notifie le Coordinateur d'un échec de tâche."""
+    token = get_manager_login_token(getattr(workflow, "owner", None))
+    sender = str(getattr(getattr(workflow, "owner", None), "remote_id", None) or "manager")
+    try:
+        proxy_publish(
+            "task/failed",
+            {
+                "task_id": str(task.id),
+                "workflow_id": str(workflow.id),
+                "volunteer_id": volunteer_id,
+                "status": "FAILED",
+                "error": error,
+            },
+            token=token,
+            sender_id=sender,
+            request_id=str(uuid.uuid4()),
+            to_volunteers=False,
+        )
+    except Exception as exc:
+        logger.warning("Publication task/failed échouée pour %s: %s", task.id, exc)
+
+
+def notify_coordinator_completion(workflow, task, volunteer, results=None) -> None:
+    """Raccourci : tâche terminée → coordinateur à 100 %."""
+    vid = str(getattr(volunteer, "coordinator_volunteer_id", None) or "")
+    if not vid:
+        return
+    publish_task_completed(workflow, task, vid, results)
+
+
+def notify_coordinator_failure(workflow, task, volunteer, error: str = "") -> None:
+    vid = str(getattr(volunteer, "coordinator_volunteer_id", None) or "")
+    if not vid:
+        return
+    publish_task_failed(workflow, task, vid, error)
+    publish_task_status(workflow, task, volunteer_id=vid, message=error or "Échec tâche")
