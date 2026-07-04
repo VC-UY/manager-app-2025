@@ -151,21 +151,28 @@ export default function WorkflowDetailPage() {
     if (!workflow) return;
     setSubmitting(true);
     try {
-      if (resubmit) {
-        await workflowService.resubmitWorkflow(workflow.id);
-        toast.info('Workflow réinitialisé et resoumis…', { position: 'top-right' });
-      } else {
-        await workflowService.submitWorkflow(workflow.id);
-        toast.info('Workflow soumis…', { position: 'top-right' });
-      }
+      const result = resubmit
+        ? await workflowService.resubmitWorkflow(workflow.id)
+        : await workflowService.submitWorkflow(workflow.id);
+      const msg =
+        (result && (result.message || result.detail)) ||
+        (resubmit
+          ? 'Workflow réinitialisé et resoumis. Les tâches iront en file d\'attente.'
+          : 'Workflow soumis. Les tâches seront mises en file d\'attente puis assignées progressivement.');
+      toast.success(typeof msg === 'string' ? msg : 'Workflow soumis.', { position: 'top-right' });
       await refreshWorkflow();
       setError(null);
     } catch (err: any) {
       console.error('Erreur lors de la soumission:', err);
       const msg =
-        err.error || err.message || 'Une erreur est survenue lors de la soumission';
-      setError(msg);
-      toast.error(msg, { position: 'top-right' });
+        err.error ||
+        err.message ||
+        err.response?.message ||
+        err.detail ||
+        'Une erreur est survenue lors de la soumission';
+      const text = typeof msg === 'string' ? msg : 'Une erreur est survenue lors de la soumission';
+      setError(text);
+      toast.error(text, { position: 'top-right' });
     } finally {
       setSubmitting(false);
     }

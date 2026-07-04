@@ -1,4 +1,4 @@
-"""Filtrage des volontaires selon leurs préférences et les besoins des tâches."""
+"""Filtrage des volontaires selon leurs préférences, ressources et capacité temps."""
 
 from __future__ import annotations
 
@@ -17,6 +17,9 @@ DAY_INDEX = {
     "samedi": 5,
     "dimanche": 6,
 }
+
+# Tâches en cours qui consomment la capacité temps du volontaire
+ACTIVE_TASK_STATUSES = ("ASSIGNED", "ACCEPTED", "RUNNING", "STARTED")
 
 
 def _prefs(volunteer) -> dict:
@@ -45,8 +48,65 @@ def is_within_schedule(prefs: dict, when: Optional[datetime] = None) -> bool:
     return False
 
 
-def volunteer_can_run_task(volunteer, task) -> bool:
-    """True si le volontaire (préférences + ressources) peut exécuter la tâche."""
+def volunteer_max_capacity_seconds(volunteer) -> Optional[float]:
+    """
+    Capacité temps max du volontaire (préférences), en secondes.
+    None = pas de limite déclarée (on peut lui donner autant de tâches que ses ressources le permettent).
+    """
+    prefs = _prefs(volunteer)
+    max_min = int(prefs.get("duree_max_execution") or 0)
+    if max_min <= 0:
+        return None
+    return float(max_min) * 60.0
+
+
+def volunteer_used_capacity_seconds(volunteer) -> float:
+    """Somme des estimations des tâches déjà ASSIGNED/RUNNING pour ce volontaire."""
+    from volunteers.models import VolunteerTask
+
+    total = 0.0
+    links = (
+        VolunteerTask.objects.filter(volunteer=volunteer, status__in=ACTIVE_TASK_STATUSES)
+        .select_related("task")
+    )
+    for link in links:
+        task = link.task
+        if not task or task.status not in ACTIVE_TASK_STATUSES:
+            continue
+        total += float(task.estimated_max_time or 0)
+    return total
+
+
+def volunteer_remaining_capacity_seconds(volunteer) -> Optional[float]:
+    """
+    Temps encore disponible pour de nouvelles tâches.
+    None = illimité.
+    """
+    max_cap = volunteer_max_capacity_seconds(volunteer)
+    if max_cap is None:
+        return None
+    return max(0.0, max_cap - volunteer_used_capacity_seconds(volunteer))
+
+
+def task_estimated_seconds(task) -> float:
+    """Durée estimée d'une tâche (secondes). Minimum 60s si non renseignée."""
+    est = float(getattr(task, "estimated_max_time", None) or 0)
+    return est if est > 0 else 60.0
+
+
+def volunteer_can_run_task(
+    volunteer,
+    task,
+    *,
+    remaining_seconds: Optional[float] = None,
+) -> bool:
+    """
+    True si le volontaire peut exécuter CETTE tâche maintenant.
+
+    La capacité temps est par tâche (et budget restant), pas pour le workflow entier :
+    un volontaire de 40 min peut prendre des tâches tant que leur somme ≤ 40 min ;
+    le reste reste en file d'attente.
+    """
     prefs = _prefs(volunteer)
     if not is_within_schedule(prefs):
         return False
@@ -69,9 +129,11 @@ def volunteer_can_run_task(volunteer, task) -> bool:
     if req_disk > max_disk + 0.05:
         return False
 
-    max_min = int(prefs.get("duree_max_execution") or 0)
-    est = float(task.estimated_max_time or 0)
-    if max_min > 0 and est > max_min * 60:
+    est = task_estimated_seconds(task)
+    if remaining_seconds is None:
+        remaining_seconds = volunteer_remaining_capacity_seconds(volunteer)
+    # Budget temps : la tâche doit tenir dans le reste disponible
+    if remaining_seconds is not None and est > remaining_seconds + 1:
         return False
 
     types = (prefs.get("types_calcul_autorises") or "").strip()
@@ -81,7 +143,6 @@ def volunteer_can_run_task(volunteer, task) -> bool:
         if allowed and wf_type and wf_type not in allowed:
             return False
 
-    # Priorité minimale acceptée
     min_prio = int(prefs.get("priorite_min_acceptee") or 0)
     wf_prio = int(getattr(task.workflow, "priority", 0) or 0) if task.workflow_id else 0
     if min_prio and wf_prio < min_prio:

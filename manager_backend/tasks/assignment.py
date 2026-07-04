@@ -1,5 +1,12 @@
 """
-Assignation simple et fiable des taches aux volontaires (sans PyTorch).
+File d'attente et assignation progressive des tâches aux volontaires.
+
+Principes :
+- La soumission crée des tâches en file (CREATED) ; elle ne dépend pas des volontaires.
+- Chaque volontaire reçoit des tâches tant que la somme des durées estimées
+  reste ≤ sa capacité (ex. 40 min) ; le reste attend.
+- Priorité workflow : les workflows urgents passent avant.
+- Quand un volontaire termine ou qu'un nouveau arrive, on réassigne depuis la file.
 """
 
 from __future__ import annotations
@@ -7,7 +14,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections import defaultdict
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from django.utils import timezone
 
@@ -23,17 +30,22 @@ from workflows.models import Workflow, WorkflowStatus
 
 logger = logging.getLogger(__name__)
 
+# Workflows dont les tâches CREATED peuvent être prises dans la file globale
+QUEUE_WORKFLOW_STATUSES = [
+    WorkflowStatus.PENDING,
+    WorkflowStatus.SUBMITTED,
+    WorkflowStatus.SPLITTING,
+    WorkflowStatus.ASSIGNING,
+    WorkflowStatus.RUNNING,
+    WorkflowStatus.PARTIAL_FAILURE,
+    WorkflowStatus.REASSIGNING,
+]
 
-def assign_workflow_to_volunteers(
-    workflow: Workflow,
+
+def _upsert_volunteers(
     volunteers_data: List[Dict[str, Any]],
-) -> Dict[str, List[Dict[str, str]]]:
-    """Assigne les taches CREATED en round-robin aux volontaires fournis."""
-    if not volunteers_data:
-        logger.info("Aucun volontaire pour le workflow %s", workflow.id)
-        return {}
-
-    volunteer_objs = []
+) -> List[Tuple[str, Volunteer]]:
+    volunteer_objs: List[Tuple[str, Volunteer]] = []
     for vdata in volunteers_data:
         volunteer_id = vdata.get("volunteer_id")
         if not volunteer_id:
@@ -51,30 +63,111 @@ def assign_workflow_to_volunteers(
                 "ip_address": resources.get("ip_address", "0.0.0.0"),
             },
         )
+        # Préférences éventuelles dans le payload présence
+        prefs = vdata.get("preferences")
+        if prefs and isinstance(prefs, dict):
+            meta = dict(volunteer.meta_info or {})
+            meta["preferences"] = {**(meta.get("preferences") or {}), **prefs}
+            volunteer.meta_info = meta
+            volunteer.save(update_fields=["meta_info"])
         volunteer_objs.append((str(volunteer_id), volunteer))
+    return volunteer_objs
 
+
+def _queued_tasks_for_workflow(workflow: Workflow) -> List[Task]:
+    return get_assignable_tasks(workflow)
+
+
+def _global_task_queue(workflow: Optional[Workflow] = None) -> List[Task]:
+    """
+    File globale : priorité workflow décroissante, puis date de soumission.
+    Si workflow est fourni, ne renvoie que ses tâches (en respectant le même ordre).
+    """
+    qs = Workflow.objects.filter(status__in=QUEUE_WORKFLOW_STATUSES)
+    if workflow is not None:
+        qs = qs.filter(id=workflow.id)
+    # Priorité haute d'abord, puis plus ancien soumis en premier (FIFO à priorité égale)
+    workflows = qs.order_by("-priority", "submitted_at", "created_at")
+    tasks: List[Task] = []
+    for wf in workflows:
+        for task in _queued_tasks_for_workflow(wf):
+            # Précharger workflow pour matching priorité / type
+            task.workflow = wf
+            tasks.append(task)
+    return tasks
+
+
+def assign_workflow_to_volunteers(
+    workflow: Workflow,
+    volunteers_data: List[Dict[str, Any]],
+) -> Dict[str, List[Dict[str, str]]]:
+    """Assigne les tâches CREATED du workflow selon capacité + préférences."""
+    by_wf = assign_queued_tasks(volunteers_data, workflow=workflow)
+    return by_wf.get(str(workflow.id), {})
+
+
+def assign_queued_tasks(
+    volunteers_data: List[Dict[str, Any]],
+    workflow: Optional[Workflow] = None,
+) -> Dict[str, Dict[str, List[Dict[str, str]]]]:
+    """
+    Assigne depuis la file d'attente (globale ou un workflow).
+
+    Retour : { workflow_id: { volunteer_id: [ {task_id, task_name, ...} ] } }
+    """
+    from volunteers.matching import (
+        task_estimated_seconds,
+        volunteer_can_run_task,
+        volunteer_remaining_capacity_seconds,
+    )
+
+    if not volunteers_data:
+        return {}
+
+    volunteer_objs = _upsert_volunteers(volunteers_data)
     if not volunteer_objs:
         return {}
 
-    from volunteers.matching import volunteer_can_run_task
+    # Budget temps restant par volontaire (None = illimité)
+    remaining: Dict[str, Optional[float]] = {}
+    for vid, vol in volunteer_objs:
+        remaining[vid] = volunteer_remaining_capacity_seconds(vol)
 
-    assignments: Dict[str, List[Dict[str, str]]] = defaultdict(list)
-    assignable = get_assignable_tasks(workflow)
-    # Index tournant par volontaire éligible
-    rr_index = 0
+    queue = _global_task_queue(workflow=workflow)
+    if not queue:
+        return {}
 
-    for task in assignable:
-        eligible = [
-            (vid, vol) for vid, vol in volunteer_objs if volunteer_can_run_task(vol, task)
-        ]
+    # workflow_id -> volunteer_id -> tasks
+    result: Dict[str, Dict[str, List[Dict[str, str]]]] = defaultdict(lambda: defaultdict(list))
+    assigned_count = 0
+    skipped_no_capacity = 0
+
+    for task in queue:
+        eligible: List[Tuple[str, Volunteer]] = []
+        for vid, vol in volunteer_objs:
+            budget = remaining[vid]
+            if not volunteer_can_run_task(vol, task, remaining_seconds=budget):
+                continue
+            eligible.append((vid, vol))
+
         if not eligible:
-            logger.info(
-                "Aucun volontaire compatible (préférences/ressources) pour la tâche %s",
-                task.id,
-            )
+            skipped_no_capacity += 1
             continue
-        volunteer_id, volunteer = eligible[rr_index % len(eligible)]
-        rr_index += 1
+
+        # Préférer le volontaire avec le plus de capacité restante (ou le moins chargé)
+        def _sort_key(item: Tuple[str, Volunteer]):
+            vid, _ = item
+            budget = remaining[vid]
+            # Illimité en dernier pour laisser de la place aux budgets serrés? Non :
+            # on préfère celui qui a le plus de marge pour équilibrer.
+            if budget is None:
+                return (1, 0.0)
+            return (0, -budget)
+
+        eligible.sort(key=_sort_key)
+        volunteer_id, volunteer = eligible[0]
+        est = task_estimated_seconds(task)
+
         VolunteerTask.objects.update_or_create(
             volunteer=volunteer,
             task=task,
@@ -85,51 +178,54 @@ def assign_workflow_to_volunteers(
         )
         task.status = TaskStatus.ASSIGNED
         task.save(update_fields=["status"])
-        # Inclure workflow_type pour filtrage côté volontaire
-        assignments[volunteer_id].append(
+
+        if remaining[volunteer_id] is not None:
+            remaining[volunteer_id] = max(0.0, float(remaining[volunteer_id]) - est)
+
+        wf_id = str(task.workflow_id)
+        result[wf_id][volunteer_id].append(
             {
+                "task_id": str(task.id),
+                "task_name": task.name,
+                "workflow_type": getattr(task.workflow, "workflow_type", ""),
+            }
+        )
+        assigned_count += 1
+
+    # Republication des tâches déjà ASSIGNED (même volontaire) pour le workflow ciblé
+    if workflow is not None:
+        wf_id = str(workflow.id)
+        for task in workflow.tasks.filter(status=TaskStatus.ASSIGNED):
+            link = (
+                VolunteerTask.objects.filter(task=task)
+                .select_related("volunteer")
+                .first()
+            )
+            if not link or not link.volunteer.coordinator_volunteer_id:
+                continue
+            vid = str(link.volunteer.coordinator_volunteer_id)
+            online_ids = {v for v, _ in volunteer_objs}
+            if vid not in online_ids:
+                continue
+            entry = {
                 "task_id": str(task.id),
                 "task_name": task.name,
                 "workflow_type": getattr(workflow, "workflow_type", ""),
             }
-        )
-
-    # Inclure aussi les taches deja ASSIGNED non terminees (republication)
-    for task in workflow.tasks.filter(status=TaskStatus.ASSIGNED):
-        link = VolunteerTask.objects.filter(task=task).select_related("volunteer").first()
-        if not link or not link.volunteer.coordinator_volunteer_id:
-            # Reassigner a un volontaire disponible
-            volunteer_id, volunteer = volunteer_objs[0]
-            VolunteerTask.objects.update_or_create(
-                volunteer=volunteer,
-                task=task,
-                defaults={
-                    "assigned_at": timezone.now(),
-                    "status": TaskStatus.ASSIGNED,
-                },
-            )
-            vid = volunteer_id
-        else:
-            vid = str(link.volunteer.coordinator_volunteer_id)
-        entry = {"task_id": str(task.id), "task_name": task.name}
-        if entry not in assignments.get(vid, []):
-            assignments[vid].append(entry)
-
-    if not assignments:
-        logger.info("Aucune tache assignable pour %s", workflow.id)
-        return {}
-
-    if assignments:
-        workflow.status = WorkflowStatus.PENDING
-        workflow.save(update_fields=["status", "updated_at"])
+            existing_ids = {e["task_id"] for e in result[wf_id].get(vid, [])}
+            if entry["task_id"] not in existing_ids:
+                result[wf_id][vid].append(entry)
 
     logger.info(
-        "Assignation workflow %s: %s volontaires, %s taches",
-        workflow.id,
-        len(assignments),
-        sum(len(v) for v in assignments.values()),
+        "File d'attente: %s assignée(s), %s encore en attente (capacité/préférences)",
+        assigned_count,
+        skipped_no_capacity,
     )
-    return dict(assignments)
+    # Convertir defaultdicts
+    return {
+        wf: {vid: tasks for vid, tasks in vols.items()}
+        for wf, vols in result.items()
+    }
 
 
 def publish_assignments(
@@ -137,7 +233,7 @@ def publish_assignments(
     assignment_result: Dict[str, List[Dict[str, str]]],
     file_server_port: Optional[int] = None,
 ) -> int:
-    """Publie les assignations sur Redis (bus direct manager/volontaire)."""
+    """Publie les assignations sur Redis (bus manager → volontaires via coordinateur)."""
     if not assignment_result:
         return 0
 
@@ -188,7 +284,7 @@ def publish_assignments(
         )
         published += len(enriched)
         logger.info(
-            "Assigne %s taches du workflow %s au volontaire %s",
+            "Assigné %s tâche(s) du workflow %s au volontaire %s",
             len(enriched),
             workflow.id,
             volunteer_id,
@@ -207,12 +303,28 @@ def _filter_online_volunteers(
         return online
 
     online_ids = {v["volunteer_id"] for v in online}
-    # Intersection: listés par le coordinateur ET encore en ligne (heartbeat)
     filtered = [
         v for v in volunteers_data if str(v.get("volunteer_id") or "") in online_ids
     ]
-    # Si le coordinateur a une liste périmée, utiliser uniquement les en-ligne
     return filtered if filtered else online
+
+
+def _queue_status_message(workflow: Workflow, assigned: int) -> str:
+    pending = workflow.tasks.filter(status=TaskStatus.CREATED).count()
+    total = workflow.tasks.count()
+    if assigned > 0 and pending > 0:
+        return (
+            f"{assigned} tâche(s) assignée(s), {pending} encore en file d'attente "
+            f"(capacité des volontaires ou priorité). Total : {total}."
+        )
+    if assigned > 0:
+        return f"{assigned} tâche(s) assignée(s) aux volontaires. Total : {total}."
+    if pending > 0:
+        return (
+            f"Workflow soumis : {pending} tâche(s) en file d'attente. "
+            "Elles seront assignées dès qu'un volontaire compatible est disponible."
+        )
+    return "Aucune tâche à assigner pour le moment."
 
 
 def assign_and_publish(
@@ -221,13 +333,14 @@ def assign_and_publish(
     file_server_port: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
-    Assigne et publie si des volontaires sont la.
-    Sinon laisse le workflow en PENDING (attente volontaire).
-    Ne leve jamais d'exception fatale pour "pas de volontaire".
+    Assigne ce qui rentre dans la capacité des volontaires en ligne.
+    Le reste reste CREATED (file d'attente). Jamais d'échec pour « pas de volontaire ».
     """
     volunteers_data = _filter_online_volunteers(volunteers_data)
+    pending_before = workflow.tasks.filter(status=TaskStatus.CREATED).count()
+
     if not volunteers_data:
-        if workflow.tasks.filter(status=TaskStatus.FAILED).exists():
+        if workflow.tasks.filter(status=TaskStatus.FAILED).exists() and pending_before == 0:
             workflow.status = WorkflowStatus.PARTIAL_FAILURE
         elif workflow.status not in (
             WorkflowStatus.RUNNING,
@@ -236,60 +349,99 @@ def assign_and_publish(
         ):
             workflow.status = WorkflowStatus.PENDING
         workflow.save(update_fields=["status", "updated_at"])
-        return {
-            "status": "waiting",
-            "message": "En attente de volontaires en ligne.",
-            "assigned": 0,
-        }
+        msg = (
+            f"Workflow en file d'attente : {pending_before} tâche(s) prêtes. "
+            "Aucun volontaire en ligne pour le moment — assignation dès qu'un volontaire se connecte."
+        )
+        return {"status": "waiting", "message": msg, "assigned": 0, "queued": pending_before}
 
     prev_status = workflow.status
     workflow.status = WorkflowStatus.ASSIGNING
     workflow.save(update_fields=["status", "updated_at"])
 
-    assignment = assign_workflow_to_volunteers(workflow, volunteers_data)
+    by_wf = assign_queued_tasks(volunteers_data, workflow=workflow)
+    assignment = by_wf.get(str(workflow.id), {})
+
     if not assignment:
-        if workflow.tasks.filter(status=TaskStatus.FAILED).exists():
+        if workflow.tasks.filter(status=TaskStatus.FAILED).exists() and pending_before == 0:
             workflow.status = WorkflowStatus.PARTIAL_FAILURE
         elif prev_status in (WorkflowStatus.RUNNING, WorkflowStatus.PARTIAL_FAILURE):
             workflow.status = prev_status
         else:
             workflow.status = WorkflowStatus.PENDING
         workflow.save(update_fields=["status", "updated_at"])
-        return {
-            "status": "waiting",
-            "message": "Aucune tache assignable pour le moment.",
-            "assigned": 0,
-        }
+        pending = workflow.tasks.filter(status=TaskStatus.CREATED).count()
+        msg = (
+            f"{pending} tâche(s) en file d'attente. "
+            "Aucun volontaire n'a assez de capacité ou de ressources pour l'instant "
+            "(ex. durée max préférée trop courte pour une tâche). "
+            "Les tâches resteront en attente jusqu'à un volontaire compatible."
+        )
+        return {"status": "waiting", "message": msg, "assigned": 0, "queued": pending}
 
     count = publish_assignments(workflow, assignment, file_server_port)
-    workflow.status = WorkflowStatus.RUNNING
+    pending = workflow.tasks.filter(status=TaskStatus.CREATED).count()
+    # RUNNING dès qu'au moins une tâche part ; le reste peut rester en file
+    workflow.status = WorkflowStatus.RUNNING if count > 0 else WorkflowStatus.PENDING
     workflow.save(update_fields=["status", "updated_at"])
     return {
-        "status": "running",
-        "message": f"{count} tache(s) assignee(s) aux volontaires.",
+        "status": "running" if count > 0 else "waiting",
+        "message": _queue_status_message(workflow, count),
         "assigned": count,
+        "queued": pending,
         "assignment": assignment,
     }
 
 
-def try_assign_pending_workflows(volunteers_data: Optional[List[Dict[str, Any]]] = None) -> int:
-    """Tente d'assigner tous les workflows en attente (PENDING/SPLITTING avec taches CREATED)."""
+def assign_all_queued_work(
+    volunteers_data: Optional[List[Dict[str, Any]]] = None,
+    file_server_port: Optional[int] = None,
+) -> Dict[str, Any]:
+    """
+    Passe la file globale (tous workflows, par priorité) et assigne selon capacité.
+    Appelé à la connexion d'un volontaire / recovery.
+    """
+    volunteers_data = _filter_online_volunteers(volunteers_data)
     if not volunteers_data:
-        return 0
+        return {"assigned": 0, "workflows": 0, "message": "Aucun volontaire en ligne."}
 
-    pending = Workflow.objects.filter(
-        status__in=[
-            WorkflowStatus.PENDING,
-            WorkflowStatus.SUBMITTED,
-            WorkflowStatus.SPLITTING,
-            WorkflowStatus.ASSIGNING,
-        ]
-    )
-    assigned_workflows = 0
-    for workflow in pending:
-        if not workflow.tasks.filter(status=TaskStatus.CREATED).exists():
+    by_wf = assign_queued_tasks(volunteers_data, workflow=None)
+    total = 0
+    workflows_touched = 0
+
+    for wf_id, assignment in by_wf.items():
+        try:
+            wf = Workflow.objects.get(id=wf_id)
+        except Workflow.DoesNotExist:
             continue
-        result = assign_and_publish(workflow, volunteers_data)
-        if result.get("assigned", 0) > 0:
-            assigned_workflows += 1
-    return assigned_workflows
+        count = publish_assignments(wf, assignment, file_server_port)
+        if count:
+            total += count
+            workflows_touched += 1
+            wf.status = WorkflowStatus.RUNNING
+            wf.save(update_fields=["status", "updated_at"])
+        else:
+            pending = wf.tasks.filter(status=TaskStatus.CREATED).count()
+            if pending and wf.status not in (
+                WorkflowStatus.RUNNING,
+                WorkflowStatus.PARTIAL_FAILURE,
+            ):
+                wf.status = WorkflowStatus.PENDING
+                wf.save(update_fields=["status", "updated_at"])
+
+    return {
+        "assigned": total,
+        "workflows": workflows_touched,
+        "message": (
+            f"{total} tâche(s) assignée(s) sur {workflows_touched} workflow(s) "
+            "(file d'attente par priorité)."
+            if total
+            else "Aucune nouvelle assignation (file vide ou capacité insuffisante)."
+        ),
+    }
+
+
+def try_assign_pending_workflows(volunteers_data: Optional[List[Dict[str, Any]]] = None) -> int:
+    """Tente d'assigner toute la file (priorité respectée)."""
+    result = assign_all_queued_work(volunteers_data)
+    return int(result.get("workflows") or 0)

@@ -59,9 +59,9 @@ def recover_pending_and_failed_work(
 ) -> Dict[str, Any]:
     """
     Point d'entrée unique : présence en ligne → libère les assignations mortes,
-    prépare les FAILED, assigne et publie.
+    prépare les FAILED, assigne depuis la file globale (priorité + capacité).
     """
-    from tasks.assignment import assign_and_publish, assign_workflow_to_volunteers, publish_assignments
+    from tasks.assignment import assign_all_queued_work
     from volunteers.presence import (
         get_online_volunteers_data,
         release_stale_assignments,
@@ -72,13 +72,6 @@ def recover_pending_and_failed_work(
     released = release_stale_assignments()
 
     online = volunteers_data or get_online_volunteers_data()
-    if not online:
-        return {
-            "online": 0,
-            "released": released,
-            "prepared_failed": 0,
-            "assigned": 0,
-        }
 
     statuses = [
         WorkflowStatus.PENDING,
@@ -92,40 +85,27 @@ def recover_pending_and_failed_work(
     workflows = Workflow.objects.filter(status__in=statuses)
 
     prepared_failed = 0
-    assigned = 0
-
     for workflow in workflows:
-        # Ne pas relancer un workflow totalement abandonné (toutes tâches max retries)
         prepared_failed += prepare_failed_tasks_for_retry(workflow)
 
-        has_created = workflow.tasks.filter(status=TaskStatus.CREATED).exists()
-        has_assigned = workflow.tasks.filter(status=TaskStatus.ASSIGNED).exists()
+    if not online:
+        return {
+            "online": 0,
+            "released": released,
+            "prepared_failed": prepared_failed,
+            "assigned": 0,
+            "message": "Aucun volontaire en ligne — tâches conservées en file d'attente.",
+        }
 
-        if has_created:
-            result = assign_and_publish(workflow, online)
-            assigned += int(result.get("assigned") or 0)
-            logger.info(
-                "Recovery workflow %s (CREATED): %s",
-                workflow.id,
-                result.get("message"),
-            )
-        elif has_assigned:
-            assignment = assign_workflow_to_volunteers(workflow, online)
-            if assignment:
-                count = publish_assignments(workflow, assignment)
-                assigned += count
-                if count:
-                    workflow.status = WorkflowStatus.RUNNING
-                    workflow.save(update_fields=["status", "updated_at"])
-                    logger.info(
-                        "Recovery workflow %s: republication %s tâche(s)",
-                        workflow.id,
-                        count,
-                    )
+    # File globale : priorité workflow, capacité temps par volontaire
+    queue_result = assign_all_queued_work(online)
+    assigned = int(queue_result.get("assigned") or 0)
+    logger.info("Recovery file d'attente: %s", queue_result.get("message"))
 
     return {
         "online": len(online),
         "released": released,
         "prepared_failed": prepared_failed,
         "assigned": assigned,
+        "message": queue_result.get("message"),
     }

@@ -130,15 +130,16 @@ def process_openmalaria_submission(workflow_id, request=None):
         except Exception as e:
             logger.error(f"Erreur lors de l'appel à submit_workflow_handler: {e}")
             logger.error(traceback.format_exc())
-            notify_event('workflow_status_change', {
-                'workflow_id': str(workflow_id),
-                'status': 'SUBMISSION_FAILED',
-                'message': f'Erreur lors de la vérification des volontaires: {str(e)}'
-            })
-            return JsonResponse({
-                'success': False,
-                'error': f'Erreur lors de la vérification des volontaires: {str(e)}'
-            }, status=500)
+            # Pas d'échec bloquant : on poursuit en local (file d'attente)
+            success = True
+            response = {
+                'status': 'success',
+                'message': (
+                    'Soumission locale : les tâches seront créées et mises en file d\'attente '
+                    f'(détail technique: {e}).'
+                ),
+                'volunteers': [],
+            }
         
         # Vérifier le succès de la soumission
         if not success:
@@ -151,8 +152,19 @@ def process_openmalaria_submission(workflow_id, request=None):
             })
             return JsonResponse({
                 'success': False,
+                'error': error_message,
+                'message': error_message,
                 'response': response
             }, status=400)
+
+        # Déjà soumis : message clair, pas de re-découpage
+        if isinstance(response, dict) and response.get('already_submitted'):
+            return JsonResponse({
+                'success': True,
+                'message': response.get('message') or 'Workflow déjà en file d\'attente.',
+                'workflow_id': str(workflow_id),
+                'already_submitted': True,
+            }, status=200)
         
         logger.info(f"Dossier de sortie: {workflow.output_path}")
 
@@ -219,6 +231,15 @@ def process_openmalaria_submission(workflow_id, request=None):
                     raise Exception("Aucune tâche n'a été créée lors du découpage")
                 
                 thread_logger.info(f"{len(tasks)} tâches créées avec succès")
+
+                # Synchroniser les tâches vers le Coordinateur (sinon 0 tâches côté CD)
+                from tasks.coordinator_sync import publish_tasks_created, publish_workflow_status
+                published = publish_tasks_created(workflow, tasks)
+                thread_logger.info("%s tâche(s) publiées vers le coordinateur", published)
+                publish_workflow_status(
+                    workflow,
+                    message=f'Découpage terminé, {len(tasks)} tâches créées',
+                )
                 
                 # Récupérer l'adresse IP
                 from redis_communication.utils import get_local_ip
@@ -245,6 +266,7 @@ def process_openmalaria_submission(workflow_id, request=None):
                 assign_result = assign_and_publish(workflow, volunteers, server_port)
                 thread_logger.info("Assignation: %s", assign_result)
                 workflow.refresh_from_db()
+                publish_workflow_status(workflow, message=assign_result.get('message', ''))
 
                 # Ecoute des retours de taches (best-effort)
                 try:
@@ -310,9 +332,17 @@ def process_openmalaria_submission(workflow_id, request=None):
         thread.start()
         
         # Retour immédiat avec code 202 (Accepted) pour éviter les timeouts
+        submit_msg = (
+            response.get('message')
+            if isinstance(response, dict) and response.get('message')
+            else (
+                'Workflow OpenMalaria soumis. Les tâches seront créées puis mises en file '
+                'd\'attente et assignées progressivement selon la capacité des volontaires.'
+            )
+        )
         return JsonResponse({
             'success': True,
-            'message': 'Workflow OpenMalaria soumis, traitement en cours en arrière-plan',
+            'message': submit_msg,
             'workflow_id': str(workflow_id),
             'num_tasks': num_tasks,
             'population_per_task': population_per_task

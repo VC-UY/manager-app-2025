@@ -1457,10 +1457,16 @@ def split_openmalaria_workflow(
         )
 
         input_size = max(1, os.path.getsize(scenario_path) // (1024 * 1024))
-        # Estimation: agents * days * MC / débit approximatif
+        # Estimation réaliste (~agent-jours / débit CPU typique)
         est_seconds = max(
-            1200,
-            int((min(pop_i, epidemiology["max_agents"]) * simulation_days * monte_carlo_runs) / 80_000),
+            600,
+            min(
+                3600,
+                int(
+                    (min(pop_i, epidemiology["max_agents"]) * simulation_days * monte_carlo_runs)
+                    / 500_000
+                ),
+            ),
         )
 
         task = Task.objects.create(

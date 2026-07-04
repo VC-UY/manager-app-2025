@@ -135,7 +135,21 @@ def process_workflow_submission(workflow_id):
                 'status': 'SUBMISSION_FAILED',
                 'message': f"Échec de la soumission: {response.get('message', 'Erreur inconnue')}"
             })
-            return JsonResponse({'success': False, 'response': response}, status=400)
+            error_message = response.get('message', 'Erreur inconnue') if isinstance(response, dict) else 'Erreur inconnue'
+            return JsonResponse({
+                'success': False,
+                'error': error_message,
+                'message': error_message,
+                'response': response,
+            }, status=400)
+
+        if isinstance(response, dict) and response.get('already_submitted'):
+            return JsonResponse({
+                'success': True,
+                'message': response.get('message') or 'Workflow déjà en file d\'attente.',
+                'workflow_id': str(workflow_id),
+                'already_submitted': True,
+            }, status=200)
             
         # Soumission réussie, mettre à jour le statut et notifier
         workflow.status = WorkflowStatus.SPLITTING
@@ -151,7 +165,15 @@ def process_workflow_submission(workflow_id):
         })
         
         # Réponse initiale au client HTTP
-        response_data = {'success': True, 'message': 'Workflow soumis avec succès, traitement en cours'}
+        submit_msg = (
+            response.get('message')
+            if isinstance(response, dict) and response.get('message')
+            else (
+                'Workflow soumis. Les tâches seront créées puis mises en file d\'attente ; '
+                'elles seront assignées progressivement selon la capacité des volontaires.'
+            )
+        )
+        response_data = {'success': True, 'message': submit_msg}
         
         # Lancer le découpage dans un thread séparé pour ne pas bloquer la réponse HTTP
         def process_workflow_async():
@@ -190,6 +212,16 @@ def process_workflow_submission(workflow_id):
                 from workflows.split_workflow import split_workflow
                 tasks = split_workflow(str(workflow_id), workflow.workflow_type, thread_logger)
                 thread_logger.info(f"Tasks: {len(tasks)} créées")
+
+                # Synchroniser les tâches vers le Coordinateur (sinon 0 tâches côté CD)
+                from tasks.coordinator_sync import publish_tasks_created, publish_workflow_status
+                if tasks:
+                    published = publish_tasks_created(workflow, tasks)
+                    thread_logger.info("%s tâche(s) publiées vers le coordinateur", published)
+                    publish_workflow_status(
+                        workflow,
+                        message=f'Découpage terminé, {len(tasks)} tâches créées',
+                    )
                 
                 # Préparer l'URL du serveur de fichiers
                 from redis_communication.utils import get_local_ip
@@ -218,6 +250,7 @@ def process_workflow_submission(workflow_id):
                 assign_result = assign_and_publish(workflow, volunteers, server_port)
                 thread_logger.info("Assignation: %s", assign_result)
                 workflow.refresh_from_db()
+                publish_workflow_status(workflow, message=assign_result.get('message', ''))
 
                 try:
                     from tasks.handlers import (

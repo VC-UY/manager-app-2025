@@ -101,12 +101,40 @@ def submit_workflow_handler(workflow_id: str, callback: Optional[Callable[[Dict[
         # Récupérer le workflow
         workflow = Workflow.objects.get(id=workflow_id)
         
-        # Vérifier que le workflow est dans un état valide pour la soumission
+        # Déjà en cours / en file : pas une erreur — les tâches attendent les volontaires
         if workflow.status != WorkflowStatus.CREATED:
-            logger.warning(f"Workflow {workflow_id} n'est pas dans un état valide pour la soumission (status={workflow.status})")
+            if workflow.status in (
+                WorkflowStatus.PENDING,
+                WorkflowStatus.SUBMITTED,
+                WorkflowStatus.SPLITTING,
+                WorkflowStatus.ASSIGNING,
+                WorkflowStatus.RUNNING,
+                WorkflowStatus.PARTIAL_FAILURE,
+                WorkflowStatus.REASSIGNING,
+            ):
+                pending = workflow.tasks.filter(status='CREATED').count()
+                return True, {
+                    'status': 'success',
+                    'message': (
+                        f"Workflow déjà soumis (statut {workflow.status}). "
+                        f"{pending} tâche(s) encore en file d'attente — "
+                        "elles seront assignées dès qu'un volontaire est disponible."
+                    ),
+                    'workflow_id': str(workflow.id),
+                    'volunteers': [],
+                    'already_submitted': True,
+                }
+            logger.warning(
+                "Workflow %s non soumis (status=%s) — utiliser Resoumettre si échec.",
+                workflow_id,
+                workflow.status,
+            )
             return False, {
                 'status': 'error',
-                'message': f"Workflow n'est pas dans un état valide pour la soumission (status={workflow.status})"
+                'message': (
+                    f"Ce workflow est en statut « {workflow.status} ». "
+                    "Utilisez « Resoumettre » pour le relancer après un échec."
+                ),
             }
         
         # Estimer les ressources
@@ -201,12 +229,36 @@ def submit_workflow_handler(workflow_id: str, callback: Optional[Callable[[Dict[
 
         if success:
             logger.info(f"Soumission reussie pour {workflow_id}")
+            # Même sans volontaires : succès — les tâches iront en file d'attente
+            if isinstance(response_data, dict):
+                volunteers = response_data.get('volunteers') or []
+                if not volunteers:
+                    response_data = {
+                        **response_data,
+                        'message': (
+                            response_data.get('message')
+                            or 'Workflow accepté. Aucun volontaire en ligne pour le moment : '
+                            'les tâches seront mises en file d\'attente puis assignées progressivement.'
+                        ),
+                    }
             return True, response_data
 
-        logger.info(f"Soumission echouee pour {workflow_id}: {response_data}")
-        workflow.status = WorkflowStatus.CREATED
-        workflow.save(update_fields=['status', 'updated_at'])
-        return False, response_data
+        # Coordinateur indisponible : on continue en local (file d'attente)
+        logger.warning(
+            "Coordinateur indisponible pour %s (%s) — poursuite locale en file d'attente",
+            workflow_id,
+            response_data,
+        )
+        return True, {
+            'status': 'success',
+            'message': (
+                'Workflow accepté localement. Synchronisation coordinateur différée ; '
+                'les tâches seront créées et attendront les volontaires.'
+            ),
+            'workflow_id': str(workflow.id),
+            'volunteers': [],
+            'coordinator_sync': False,
+        }
 
     except Workflow.DoesNotExist:
         logger.error(f"Workflow {workflow_id} non trouvé")
