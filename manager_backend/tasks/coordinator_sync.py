@@ -12,26 +12,37 @@ from redis_communication.utils import get_manager_login_token
 logger = logging.getLogger(__name__)
 
 
-def publish_tasks_created(workflow, tasks: Iterable) -> int:
-    """Publie task/created pour chaque tâche afin que le Coordinateur les affiche."""
+def publish_tasks_created(workflow, tasks: Iterable, file_server_port: Optional[int] = None) -> int:
+    """Publie task/created pour chaque tâche — le Coordinateur assignera aux volontaires."""
+    from redis_communication.utils import build_task_file_transfer_info
+
     token = get_manager_login_token(getattr(workflow, "owner", None))
     sender = str(getattr(getattr(workflow, "owner", None), "remote_id", None) or "manager")
     count = 0
     for task in tasks:
         try:
+            transfer = build_task_file_transfer_info(workflow, task, file_server_port)
             proxy_publish(
                 "task/created",
                 {
                     "task_id": str(task.id),
                     "workflow_id": str(workflow.id),
                     "name": task.name,
-                    "status": task.status,
+                    "status": "PENDING",
                     "command": task.command or "",
                     "description": task.description or "",
                     "required_resources": task.required_resources or {},
                     "input_files": task.input_files or [],
                     "output_files": task.output_files or [],
                     "progress": float(task.progress or 0),
+                    "estimated_execution_time": float(task.estimated_max_time or 0),
+                    "input_data": transfer,
+                    "input_data_size": int(task.input_size or 0),
+                    "docker_information": task.docker_info or {},
+                    "workflow_type": getattr(workflow, "workflow_type", ""),
+                    "parameters": task.parameters or [],
+                    "dependencies": task.dependencies or [],
+                    "is_subtask": bool(task.is_subtask),
                 },
                 token=token,
                 sender_id=sender,
@@ -43,6 +54,52 @@ def publish_tasks_created(workflow, tasks: Iterable) -> int:
             logger.warning("Publication task/created échouée pour %s: %s", task.id, exc)
     logger.info("Publié %s tâche(s) vers le coordinateur (workflow %s)", count, workflow.id)
     return count
+
+
+def publish_workflow_tasks_ready(workflow, message: str = "", file_server_port: Optional[int] = None) -> None:
+    """Signale au Coordinateur que toutes les tâches sont en file — lancer l'assignation."""
+    token = get_manager_login_token(getattr(workflow, "owner", None))
+    sender = str(getattr(getattr(workflow, "owner", None), "remote_id", None) or "manager")
+    try:
+        proxy_publish(
+            "workflow/tasks_ready",
+            {
+                "workflow_id": str(workflow.id),
+                "name": workflow.name,
+                "workflow_type": workflow.workflow_type,
+                "priority": int(getattr(workflow, "priority", 1) or 1),
+                "task_count": workflow.tasks.count(),
+                "message": message or "Tâches prêtes — assignation par le coordinateur",
+                "file_server_port": file_server_port,
+            },
+            token=token,
+            sender_id=sender,
+            request_id=str(uuid.uuid4()),
+            to_volunteers=False,
+        )
+    except Exception as exc:
+        logger.warning("Publication workflow/tasks_ready échouée: %s", exc)
+
+
+def publish_assign_request(workflow=None, message: str = "") -> None:
+    """Demande au Coordinateur de parcourir la file d'attente."""
+    owner = getattr(workflow, "owner", None) if workflow else None
+    token = get_manager_login_token(owner)
+    sender = str(getattr(owner, "remote_id", None) or "manager")
+    try:
+        proxy_publish(
+            "coordinator/assign_request",
+            {
+                "workflow_id": str(workflow.id) if workflow else None,
+                "message": message or "Demande d'assignation",
+            },
+            token=token,
+            sender_id=sender,
+            request_id=str(uuid.uuid4()),
+            to_volunteers=False,
+        )
+    except Exception as exc:
+        logger.warning("Publication coordinator/assign_request échouée: %s", exc)
 
 
 def publish_workflow_status(workflow, message: str = "") -> None:

@@ -132,7 +132,7 @@ class TaskViewSet(viewsets.ModelViewSet):
         Relance une tâche échouée (ou assignée expirée) vers un volontaire en ligne.
         """
         from tasks.models import TaskStatus
-        from tasks.assignment import assign_and_publish
+        from tasks.coordinator_sync import publish_assign_request, publish_task_status
         from tasks.recovery import recover_pending_and_failed_work
         from volunteers.models import VolunteerTask as VT
         from volunteers.presence import get_online_volunteers_data
@@ -174,6 +174,12 @@ class TaskViewSet(viewsets.ModelViewSet):
 
         online = get_online_volunteers_data()
         if not online:
+            publish_task_status(
+                workflow,
+                task,
+                message="En file d'attente — aucun volontaire en ligne",
+                clear_assignment=True,
+            )
             return Response(
                 {
                     "success": False,
@@ -184,9 +190,14 @@ class TaskViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_202_ACCEPTED,
             )
 
-        result = assign_and_publish(workflow, online)
-        if result.get("assigned", 0) == 0:
-            result = recover_pending_and_failed_work(online)
+        publish_task_status(
+            workflow,
+            task,
+            message="Retry — assignation par le coordinateur",
+            clear_assignment=True,
+        )
+        publish_assign_request(workflow, message=f"Retry tâche {task.id}")
+        result = recover_pending_and_failed_work(online)
 
         task.refresh_from_db()
         return Response(

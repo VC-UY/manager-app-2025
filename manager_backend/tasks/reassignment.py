@@ -45,13 +45,25 @@ def reassign_failed_tasks(
     if prepared == 0:
         return {"reassigned": 0, "skipped": failed_count}
 
-    from tasks.assignment import assign_and_publish
+    from tasks.coordinator_sync import publish_assign_request, publish_task_status, publish_workflow_status
 
     workflow.status = WorkflowStatus.REASSIGNING
     workflow.save(update_fields=["status", "updated_at"])
 
-    result = assign_and_publish(workflow, online)
-    assigned = int(result.get("assigned") or 0)
+    synced = 0
+    for task in workflow.tasks.filter(status=TaskStatus.CREATED):
+        publish_task_status(
+            workflow,
+            task,
+            message="Retry — en file d'attente",
+            clear_assignment=True,
+        )
+        synced += 1
+
+    publish_workflow_status(workflow, message=f"{synced} tâche(s) préparées pour réassignation")
+    publish_assign_request(workflow, message="Réassignation après échec")
+
+    assigned = 0
 
     try:
         from websocket_service.client import notify_event

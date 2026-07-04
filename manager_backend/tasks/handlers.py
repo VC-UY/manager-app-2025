@@ -14,6 +14,81 @@ logger = logging.getLogger(__name__)
 
 
 
+def handle_coordinator_task_assigned(channel: str, message: Message):
+    """
+    Le Coordinateur a assigné une tâche — refléter localement côté Manager.
+    """
+    data = message.data or {}
+    task_id = data.get('task_id')
+    volunteer_id = data.get('volunteer_id')
+    workflow_id = data.get('workflow_id')
+
+    if not task_id or not volunteer_id:
+        logger.error("coordinator/task_assigned: task_id ou volunteer_id manquant")
+        return False
+
+    logger.info(
+        "Assignation coordinateur: tâche %s → volontaire %s",
+        task_id,
+        volunteer_id,
+    )
+
+    try:
+        from workflows.models import Workflow, WorkflowStatus
+        from tasks.models import Task, TaskStatus
+        from volunteers.models import Volunteer, VolunteerTask
+
+        task = Task.objects.get(id=task_id)
+        workflow = (
+            Workflow.objects.get(id=workflow_id)
+            if workflow_id
+            else task.workflow
+        )
+        volunteer = Volunteer.objects.get(coordinator_volunteer_id=volunteer_id)
+
+        VolunteerTask.objects.update_or_create(
+            volunteer=volunteer,
+            task=task,
+            defaults={
+                "assigned_at": timezone.now(),
+                "status": TaskStatus.ASSIGNED,
+            },
+        )
+        task.status = TaskStatus.ASSIGNED
+        task.save(update_fields=["status"])
+
+        if workflow.status in (
+            WorkflowStatus.PENDING,
+            WorkflowStatus.CREATED,
+            WorkflowStatus.SUBMITTED,
+            WorkflowStatus.ASSIGNING,
+        ):
+            workflow.status = WorkflowStatus.RUNNING
+            workflow.save(update_fields=["status", "updated_at"])
+
+        from websocket_service.client import notify_event
+        notify_event(
+            'task_status_change',
+            {
+                'workflow_id': str(workflow.id),
+                'task_id': str(task.id),
+                'status': 'ASSIGNED',
+                'volunteer': volunteer.name,
+                'message': (
+                    f"Tâche {task.name} assignée à {volunteer.name} "
+                    "(par le coordinateur)"
+                ),
+            },
+        )
+        return True
+
+    except Exception as exc:
+        logger.error("Erreur coordinator/task_assigned: %s", exc)
+        import traceback
+        logger.error(traceback.format_exc())
+        return False
+
+
 def handle_task_accept(channel: str, message: Message):
     """
     Gestionnaire pour l'écoute des messages de type 'task/accept'.

@@ -684,6 +684,11 @@ def handle_task_files_ready(channel: str, message: Message):
         logger.error(traceback.format_exc())
 
 
+def handle_coordinator_task_assigned_wrapper(channel: str, message: Message):
+    from tasks.handlers import handle_coordinator_task_assigned
+    return handle_coordinator_task_assigned(channel, message)
+
+
 # Dictionnaire des gestionnaires par défaut
 DEFAULT_HANDLERS = {
     # Canaux génériques / présence volontaires
@@ -702,4 +707,7 @@ DEFAULT_HANDLERS = {
 
     # Canal pour les fichiers de sortie
     "manager/task_files": handle_task_files_ready,
+
+    # Assignation faite par le Coordinateur
+    "coordinator/task_assigned": handle_coordinator_task_assigned_wrapper,
 }

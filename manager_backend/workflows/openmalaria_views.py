@@ -232,13 +232,24 @@ def process_openmalaria_submission(workflow_id, request=None):
                 
                 thread_logger.info(f"{len(tasks)} tâches créées avec succès")
 
-                # Synchroniser les tâches vers le Coordinateur (sinon 0 tâches côté CD)
-                from tasks.coordinator_sync import publish_tasks_created, publish_workflow_status
-                published = publish_tasks_created(workflow, tasks)
+                # Synchroniser les tâches vers le Coordinateur — c'est lui qui assigne
+                from tasks.coordinator_sync import (
+                    publish_tasks_created,
+                    publish_workflow_status,
+                    publish_workflow_tasks_ready,
+                )
+                published = publish_tasks_created(workflow, tasks, server_port)
                 thread_logger.info("%s tâche(s) publiées vers le coordinateur", published)
+                workflow.status = WorkflowStatus.PENDING
+                workflow.save(update_fields=["status", "updated_at"])
                 publish_workflow_status(
                     workflow,
-                    message=f'Découpage terminé, {len(tasks)} tâches créées',
+                    message=f'{len(tasks)} tâches en file d\'attente — assignation par le coordinateur',
+                )
+                publish_workflow_tasks_ready(
+                    workflow,
+                    message=f'Découpage terminé, {len(tasks)} tâches',
+                    file_server_port=server_port,
                 )
                 
                 # Récupérer l'adresse IP
@@ -255,18 +266,23 @@ def process_openmalaria_submission(workflow_id, request=None):
                 # Notifier la fin du découpage
                 notify_event('workflow_status_change', {
                     'workflow_id': str(workflow_id),
-                    'status': 'SPLIT_COMPLETED',
-                    'message': f'Découpage terminé, {len(tasks)} tâches créées'
+                    'status': 'PENDING',
+                    'message': (
+                        f'Découpage terminé, {len(tasks)} tâches en file d\'attente. '
+                        'Le coordinateur assignera les volontaires disponibles.'
+                    ),
                 })
                 
-                # Assigner les tâches (ou attendre un volontaire — jamais d'echec pour ca)
-                volunteers = response.get('volunteers') if isinstance(response, dict) else None
-                from tasks.assignment import assign_and_publish
-
-                assign_result = assign_and_publish(workflow, volunteers, server_port)
-                thread_logger.info("Assignation: %s", assign_result)
+                assign_result = {
+                    'status': 'waiting',
+                    'message': (
+                        f'{len(tasks)} tâche(s) soumises — en attente d\'assignation par le coordinateur.'
+                    ),
+                    'assigned': 0,
+                    'queued': len(tasks),
+                }
+                thread_logger.info("Soumission: %s", assign_result)
                 workflow.refresh_from_db()
-                publish_workflow_status(workflow, message=assign_result.get('message', ''))
 
                 # Ecoute des retours de taches (best-effort)
                 try:

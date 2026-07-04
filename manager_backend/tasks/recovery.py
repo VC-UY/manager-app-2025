@@ -59,9 +59,10 @@ def recover_pending_and_failed_work(
 ) -> Dict[str, Any]:
     """
     Point d'entrée unique : présence en ligne → libère les assignations mortes,
-    prépare les FAILED, assigne depuis la file globale (priorité + capacité).
+    prépare les FAILED, synchronise la file vers le Coordinateur (qui assigne).
     """
-    from tasks.assignment import assign_all_queued_work
+    from tasks.coordinator_sync import publish_assign_request, publish_task_status
+    from tasks.models import TaskStatus
     from volunteers.presence import (
         get_online_volunteers_data,
         release_stale_assignments,
@@ -97,15 +98,32 @@ def recover_pending_and_failed_work(
             "message": "Aucun volontaire en ligne — tâches conservées en file d'attente.",
         }
 
-    # File globale : priorité workflow, capacité temps par volontaire
-    queue_result = assign_all_queued_work(online)
-    assigned = int(queue_result.get("assigned") or 0)
-    logger.info("Recovery file d'attente: %s", queue_result.get("message"))
+    synced = 0
+    for workflow in workflows:
+        for task in workflow.tasks.filter(status=TaskStatus.CREATED):
+            publish_task_status(
+                workflow,
+                task,
+                message="En file d'attente — assignation coordinateur",
+                clear_assignment=True,
+            )
+            synced += 1
+
+    publish_assign_request(message="Recovery manager — assignation demandée au coordinateur")
+    logger.info(
+        "Recovery: %s tâche(s) synchronisée(s), assignation déléguée au coordinateur",
+        synced,
+    )
 
     return {
         "online": len(online),
         "released": released,
         "prepared_failed": prepared_failed,
-        "assigned": assigned,
-        "message": queue_result.get("message"),
+        "synced": synced,
+        "assigned": 0,
+        "message": (
+            f"{synced} tâche(s) en file — le coordinateur assignera les volontaires"
+            if synced
+            else "Recovery terminée — assignation par le coordinateur"
+        ),
     }

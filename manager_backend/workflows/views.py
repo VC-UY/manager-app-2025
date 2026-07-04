@@ -213,14 +213,28 @@ def process_workflow_submission(workflow_id):
                 tasks = split_workflow(str(workflow_id), workflow.workflow_type, thread_logger)
                 thread_logger.info(f"Tasks: {len(tasks)} créées")
 
-                # Synchroniser les tâches vers le Coordinateur (sinon 0 tâches côté CD)
-                from tasks.coordinator_sync import publish_tasks_created, publish_workflow_status
+                # Synchroniser les tâches vers le Coordinateur — c'est lui qui assigne
+                from tasks.coordinator_sync import (
+                    publish_tasks_created,
+                    publish_workflow_status,
+                    publish_workflow_tasks_ready,
+                )
                 if tasks:
-                    published = publish_tasks_created(workflow, tasks)
+                    published = publish_tasks_created(workflow, tasks, server_port)
                     thread_logger.info("%s tâche(s) publiées vers le coordinateur", published)
+                    workflow.status = WorkflowStatus.PENDING
+                    workflow.save(update_fields=["status", "updated_at"])
                     publish_workflow_status(
                         workflow,
-                        message=f'Découpage terminé, {len(tasks)} tâches créées',
+                        message=(
+                            f'{len(tasks)} tâches en file d\'attente — '
+                            'assignation par le coordinateur'
+                        ),
+                    )
+                    publish_workflow_tasks_ready(
+                        workflow,
+                        message=f'Découpage terminé, {len(tasks)} tâches',
+                        file_server_port=server_port,
                     )
                 
                 # Préparer l'URL du serveur de fichiers
@@ -239,18 +253,24 @@ def process_workflow_submission(workflow_id):
                 # Notifier la fin du découpage
                 notify_event('workflow_status_change', {
                     'workflow_id': str(workflow_id),
-                    'status': 'SPLIT_COMPLETED',
-                    'message': f'Découpage terminé, {len(tasks) if tasks else 0} tâches créées'
+                    'status': 'PENDING',
+                    'message': (
+                        f'Découpage terminé, {len(tasks) if tasks else 0} tâches en file d\'attente. '
+                        'Le coordinateur assignera les volontaires disponibles.'
+                    ),
                 })
                 
-                # Assigner ou attendre un volontaire (jamais d'echec pour absence de volontaire)
-                volunteers = response.get('volunteers') if isinstance(response, dict) else None
-                from tasks.assignment import assign_and_publish
-
-                assign_result = assign_and_publish(workflow, volunteers, server_port)
-                thread_logger.info("Assignation: %s", assign_result)
+                assign_result = {
+                    'status': 'waiting',
+                    'message': (
+                        f'{len(tasks) if tasks else 0} tâche(s) soumises — '
+                        'en attente d\'assignation par le coordinateur.'
+                    ),
+                    'assigned': 0,
+                    'queued': len(tasks) if tasks else 0,
+                }
+                thread_logger.info("Soumission: %s", assign_result)
                 workflow.refresh_from_db()
-                publish_workflow_status(workflow, message=assign_result.get('message', ''))
 
                 try:
                     from tasks.handlers import (
