@@ -66,15 +66,21 @@ class RedisClient:
         self.db = self.config.get('db', getattr(settings, 'REDIS_DB', 0))
         
         # Client Redis
-        self.redis = redis.Redis(
+        # lib_name/lib_version=None: evite CLIENT SETINFO (le proxy le filtre sans repondre)
+        # Connexions separees publish vs pubsub: le proxy bloque si on melange sur le meme pool.
+        self._redis_kwargs = dict(
             host=self.host,
             port=int(self.port),
             db=self.db,
             decode_responses=True,
             protocol=2,
-            socket_connect_timeout=5,
-            socket_timeout=5,
+            lib_name=None,
+            lib_version=None,
+            socket_connect_timeout=10,
+            socket_timeout=30,
         )
+        self.redis = redis.Redis(**self._redis_kwargs)
+        self._publish_redis = redis.Redis(**self._redis_kwargs)
         
         # PubSub pour les abonnements
         self.pubsub = self.redis.pubsub(ignore_subscribe_messages=True)
@@ -142,8 +148,15 @@ class RedisClient:
             self.handlers[channel] = []
         self.handlers[channel].append(handler)
         
-        # S'abonner au canal Redis
-        self.pubsub.subscribe(channel)
+        # S'abonner au canal Redis (recreer pubsub si la connexion est morte)
+        try:
+            self.pubsub.subscribe(channel)
+        except Exception as sub_err:
+            logger.warning(f"PubSub mort ({sub_err}), recreation...")
+            self.redis = redis.Redis(**self._redis_kwargs)
+            self.pubsub = self.redis.pubsub(ignore_subscribe_messages=True)
+            for ch in self.handlers:
+                self.pubsub.subscribe(ch)
         
         logger.info(f"Abonné au canal: {channel}")
         return True
@@ -231,7 +244,7 @@ class RedisClient:
 
             # Note: config_get/config_set supprimés car non supportés par le proxy Redis custom
 
-            self.redis.publish(channel, json_message)
+            self._publish_redis.publish(channel, json_message)
             self.stats['messages_sent'] += 1
             self.stats['last_activity'] = time.time()
             
@@ -239,7 +252,13 @@ class RedisClient:
             return message.request_id
         except Exception as e:
             logger.error(f"Erreur lors de la publication sur {channel}: {e}")
-            raise ChannelError(f"Erreur de publication: {e}")
+            # Recreer le client publish et reessayer une fois
+            try:
+                self._publish_redis = redis.Redis(**self._redis_kwargs)
+                self._publish_redis.publish(channel, json_message)
+                return message.request_id
+            except Exception as retry_err:
+                raise ChannelError(f"Erreur de publication: {retry_err}") from e
     
     def _listen_loop(self):
         """

@@ -85,8 +85,8 @@ def main():
         preds = model(data).argmax(1)
         accuracy = (preds == labels).float().mean().item()
 
-    # Format compatible manager (sans torch): pickle de tenseurs numpy
-    weights = {key: value.detach().cpu().numpy() for key, value in model.state_dict().items()}
+    # Format compatible manager (sans torch/numpy dans le worker): listes Python
+    weights = {key: value.detach().cpu().tolist() for key, value in model.state_dict().items()}
     model_path = output_dir / "model.pt"
     metrics_path = output_dir / "metrics.json"
     with open(model_path, "wb") as handle:

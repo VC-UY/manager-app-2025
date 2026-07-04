@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, JSX } from 'react';
+import { useCallback, useEffect, useState, JSX } from 'react';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { useManagerWebSocket } from '@/hooks/useManagerWebSocket';
@@ -36,100 +36,9 @@ interface Task {
   progress: number;
 }
 
+const RESUBMITTABLE = new Set(['FAILED', 'PARTIAL_FAILURE', 'ERROR', 'PENDING']);
+
 export default function WorkflowDetailPage() {
-  // Ajout d'une fonction de validation des messages WebSocket
-  function validateWebSocketMessage(event: any, requiredFields: string[]) {
-    for (const field of requiredFields) {
-      if (!(field in event)) {
-        console.error(`Champ manquant dans le message WebSocket : ${field}`);
-        return false;
-      }
-    }
-    return true;
-  }
-
-  // Affichage des événements temps réel via WebSocket
-  useManagerWebSocket((event) => {
-    // Validation des messages WebSocket
-    const requiredFields = ['type', 'workflow_id'];
-    if (!validateWebSocketMessage(event, requiredFields)) {
-      toast.error('Message WebSocket invalide reçu', { position: 'top-right' });
-      return;
-    }
-
-    // Toast (déjà présent)
-    let msg = '';
-    if (event.type) {
-      msg = `[${event.type}] ` + (event.message || JSON.stringify(event));
-    } else {
-      msg = JSON.stringify(event);
-    }
-    // Toast uniquement pour les événements majeurs
-    if (event.type === 'workflow_status_change' ) {
-      // Afficher un toast pour tous les changements de statut
-      toast.info(event.message || `[workflow_status_change] ${event.status}`, { position: 'top-right' });
-      // Mettre à jour le statut du workflow (affichage DOM)
-      if (event.workflow_id === id && workflow) {
-        setWorkflow({ ...workflow, status: event.status });
-      }
-    } else if (event.type === 'task_status_change' || event.type === 'task_status_update' || event.type === 'task_update' || event.type === 'task_status') {
-      if (event.status === 'COMPLETED') {
-        toast.success(event.message || 'Tâche complétée', { position: 'top-right' });
-      } else if (event.status === 'FAILED') {
-        toast.error(event.message || 'Tâche échouée', { position: 'top-right' });
-      } else if (event.status === 'STARTED' || event.status === 'RUNNING') {
-        toast.info(event.message || 'Tâche démarrée', { position: 'top-right' });
-      }
-      if(event.status === 'TERMINATED') {
-        toast.error(event.message || 'Tâche terminée', { position: 'top-right' });
-      }
-      if(event.status === 'SPLIT_COMPLETED') {
-        toast.info(event.message || 'Decoupage terminé', { position: 'top-right' });
-        // Rafraîchir la liste des tâches
-        taskService.getWorkflowTasks(id as string)
-          .then(setTasks)
-          .catch(() => toast.error('Impossible de charger les tâches du workflow après découpage'));
-      }
-    }else if (event.type === 'workflow_update') {
-      setWorkflow(event.workflow);
-    }else {
-      console.log("Event type non reconnu", event);
-      toast.warning(msg, { position: 'top-right', autoClose: 10000 });
-    }
-      
-
-    // Rafraîchir la liste des tâches après SPLIT_COMPLETED
-    if (event.type === 'workflow_status_change' && event.status === 'SPLIT_COMPLETED' && event.workflow_id === id) {
-      // Recharge aussi le workflow pour avoir le bon statut
-      workflowService.getWorkflow(id as string)
-        .then(setWorkflow)
-        .catch(() => toast.error('Impossible de charger le workflow après découpage', { position: 'top-right' }));
-
-      taskService.getWorkflowTasks(id as string)
-        .then(setTasks)
-        .catch(() => toast.error('Impossible de charger les tâches du workflow après découpage', { position: 'top-right' }));
-    }
-
-    // Progression d'une tâche
-    if (event.type === 'task_progress' && event.workflow_id === id && event.task_id) {
-      setTasks((prev) => prev.map(task => task.id === event.task_id ? { ...task, progress: event.progress ?? 0 } : task));
-    }
-
-    // Changement de statut d'une tâche
-    if (event.type === 'task_status_change' && event.workflow_id === id && event.task_id) {
-      setTasks((prev) => prev.map(task => task.id === event.task_id ? { ...task, status: event.status ?? task.status, progress: event.status === 'COMPLETED' ? 100 : task.progress } : task));
-    }
-
-    // Mise à jour silencieuse des tâches sur task_update
-    if (event.type === 'task_update' && event.task && event.task.workflow_id === id) {
-      setTasks((prev) => prev.map(task => task.id === event.task.id ? { ...task, ...event.task, progress: event.status === 'COMPLETED' ? 100 : task.progress } : task));
-    }
-
-    // Mise à jour silencieuse du workflow sur workflow_update
-    if (event.type === 'workflow_update' && event.workflow && event.workflow.id === id) {
-      setWorkflow(event.workflow);
-    }
-  });
   const { id } = useParams();
   const router = useRouter();
 
@@ -138,6 +47,77 @@ export default function WorkflowDetailPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const refreshWorkflow = useCallback(async () => {
+    if (!id) return;
+    try {
+      const [wf, workflowTasks] = await Promise.all([
+        workflowService.getWorkflow(id as string),
+        taskService.getWorkflowTasks(id as string),
+      ]);
+      setWorkflow(wf);
+      setTasks(Array.isArray(workflowTasks) ? workflowTasks : workflowTasks?.results || []);
+    } catch {
+      // silencieux en temps réel
+    }
+  }, [id]);
+
+  useManagerWebSocket({
+    workflowId: id as string,
+    showToasts: true,
+    enabled: Boolean(id),
+    handlers: {
+      onWorkflowStatus: (event) => {
+        if (event.status) {
+          setWorkflow((prev) => (prev ? { ...prev, status: event.status as string } : prev));
+        }
+        if (
+          event.status === 'SPLIT_COMPLETED' ||
+          event.status === 'PENDING' ||
+          event.status === 'RUNNING' ||
+          event.status === 'COMPLETED' ||
+          event.status === 'FAILED'
+        ) {
+          refreshWorkflow();
+        }
+      },
+      onWorkflowUpdate: (event) => {
+        const wf = event.workflow;
+        if (wf && typeof wf === 'object' && wf.id) {
+          setWorkflow((prev) => (prev ? { ...prev, ...wf, status: (wf.status as string) || prev.status } : prev));
+        }
+      },
+      onTaskStatus: (event) => {
+        const taskId = event.task_id || event.task?.id;
+        const status = event.status || event.task?.status;
+        if (taskId && status) {
+          setTasks((prev) =>
+            prev.map((task) =>
+              task.id === taskId
+                ? {
+                    ...task,
+                    status: status as string,
+                    progress: status === 'COMPLETED' ? 100 : task.progress,
+                  }
+                : task,
+            ),
+          );
+        }
+        if (status === 'COMPLETED' || status === 'FAILED') {
+          refreshWorkflow();
+        }
+      },
+      onTaskProgress: (event) => {
+        if (event.task_id != null && event.progress != null) {
+          setTasks((prev) =>
+            prev.map((task) =>
+              task.id === event.task_id ? { ...task, progress: Number(event.progress) || 0 } : task,
+            ),
+          );
+        }
+      },
+    },
+  });
 
   // --- Chargement du workflow et de ses tâches ---
   useEffect(() => {
@@ -150,7 +130,7 @@ export default function WorkflowDetailPage() {
 
         // 2) Charger toutes les tâches liées à ce workflow
         const workflowTasks = await taskService.getWorkflowTasks(id as string);
-        setTasks(workflowTasks);
+        setTasks(Array.isArray(workflowTasks) ? workflowTasks : workflowTasks?.results || []);
 
         setError(null);
       } catch (err: any) {
@@ -166,22 +146,26 @@ export default function WorkflowDetailPage() {
     }
   }, [id]);
 
-  // --- Soumission du workflow ---
-  const handleSubmit = async () => {
+  // --- Soumission / resoumission du workflow ---
+  const handleSubmit = async (resubmit = false) => {
     if (!workflow) return;
     setSubmitting(true);
     try {
-      await workflowService.submitWorkflow(workflow.id);
-      // Recharger le workflow
-      const updated = await workflowService.getWorkflow(workflow.id);
-      setWorkflow(updated);
-      // Recharger aussi les tâches (elles seront créées côté back)
-      const workflowTasks = await taskService.getWorkflowTasks(workflow.id);
-      setTasks(workflowTasks);
+      if (resubmit) {
+        await workflowService.resubmitWorkflow(workflow.id);
+        toast.info('Workflow réinitialisé et resoumis…', { position: 'top-right' });
+      } else {
+        await workflowService.submitWorkflow(workflow.id);
+        toast.info('Workflow soumis…', { position: 'top-right' });
+      }
+      await refreshWorkflow();
       setError(null);
     } catch (err: any) {
       console.error('Erreur lors de la soumission:', err);
-      setError(err.error || 'Une erreur est survenue lors de la soumission');
+      const msg =
+        err.error || err.message || 'Une erreur est survenue lors de la soumission';
+      setError(msg);
+      toast.error(msg, { position: 'top-right' });
     } finally {
       setSubmitting(false);
     }
@@ -201,16 +185,22 @@ export default function WorkflowDetailPage() {
 
   // Obtenir les informations de statut avec icône et couleurs
   const getStatusInfo = (status: string) => {
-    const statusMap: any = {
-      'CREATED': { color: '#94A3B8', bg: 'rgba(148, 163, 184, 0.1)', label: 'Créé' },
-      'VALIDATED': { color: '#60A5FA', bg: 'rgba(96, 165, 250, 0.1)', label: 'Validé' },
-      'SUBMITTED': { color: '#60A5FA', bg: 'rgba(96, 165, 250, 0.1)', label: 'Soumis' },
-      'RUNNING': { color: '#3B82F6', bg: 'rgba(59, 130, 246, 0.15)', label: 'En cours' },
-      'COMPLETED': { color: '#10B981', bg: 'rgba(16, 185, 129, 0.1)', label: 'Terminé' },
-      'FAILED': { color: '#EF4444', bg: 'rgba(239, 68, 68, 0.1)', label: 'Échoué' },
-      'PENDING': { color: '#94A3B8', bg: 'rgba(148, 163, 184, 0.1)', label: 'En attente' }
+    const statusMap: Record<string, { color: string; bg: string; label: string }> = {
+      CREATED: { color: '#94A3B8', bg: 'rgba(148, 163, 184, 0.1)', label: 'Créé' },
+      VALIDATED: { color: '#60A5FA', bg: 'rgba(96, 165, 250, 0.1)', label: 'Validé' },
+      SUBMITTED: { color: '#60A5FA', bg: 'rgba(96, 165, 250, 0.1)', label: 'Soumis' },
+      SPLITTING: { color: '#38BDF8', bg: 'rgba(56, 189, 248, 0.12)', label: 'Découpage…' },
+      ASSIGNING: { color: '#38BDF8', bg: 'rgba(56, 189, 248, 0.12)', label: 'Attribution…' },
+      PENDING: { color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.12)', label: 'En attente de volontaires' },
+      RUNNING: { color: '#3B82F6', bg: 'rgba(59, 130, 246, 0.15)', label: 'En cours' },
+      AGGREGATING: { color: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.12)', label: 'Agrégation…' },
+      COMPLETED: { color: '#10B981', bg: 'rgba(16, 185, 129, 0.1)', label: 'Terminé' },
+      FAILED: { color: '#EF4444', bg: 'rgba(239, 68, 68, 0.1)', label: 'Échoué' },
+      PARTIAL_FAILURE: { color: '#F97316', bg: 'rgba(249, 115, 22, 0.12)', label: 'Échec partiel' },
+      ERROR: { color: '#EF4444', bg: 'rgba(239, 68, 68, 0.1)', label: 'Erreur' },
+      PAUSED: { color: '#94A3B8', bg: 'rgba(148, 163, 184, 0.1)', label: 'En pause' },
     };
-    return statusMap[status] || statusMap['CREATED'];
+    return statusMap[status] || statusMap.CREATED;
   };
 
   // Obtenir les informations sur le type de workflow
@@ -426,23 +416,25 @@ export default function WorkflowDetailPage() {
                   </span>
                 </div>
               </div>
-              <div className="flex gap-3">
-                <Link
-                  href={`/workflows/${workflow.id}/edit`}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300" style={{
-                    background: 'rgba(59, 130, 246, 0.2)',
-                    border: '1px solid rgba(59, 130, 246, 0.3)',
-                    color: '#60A5FA'
-                  }}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                  Modifier
-                </Link>
+              <div className="flex gap-3 flex-wrap">
+                {(workflow.status === 'CREATED' || RESUBMITTABLE.has(workflow.status)) && (
+                  <Link
+                    href={`/workflows/${workflow.id}/edit`}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300" style={{
+                      background: 'rgba(59, 130, 246, 0.2)',
+                      border: '1px solid rgba(59, 130, 246, 0.3)',
+                      color: '#60A5FA'
+                    }}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    Modifier
+                  </Link>
+                )}
                 {workflow.status === 'CREATED' && (
                   <button
-                    onClick={handleSubmit}
+                    onClick={() => handleSubmit(false)}
                     disabled={submitting}
                     className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300"
                     style={{
@@ -467,6 +459,39 @@ export default function WorkflowDetailPage() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                         </svg>
                         Soumettre
+                      </>
+                    )}
+                  </button>
+                )}
+                {RESUBMITTABLE.has(workflow.status) && (
+                  <button
+                    onClick={() => handleSubmit(true)}
+                    disabled={submitting}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300"
+                    style={{
+                      background: submitting
+                        ? 'rgba(245, 158, 11, 0.3)'
+                        : 'linear-gradient(135deg, #F59E0B 0%, #FBBF24 100%)',
+                      border: '1px solid rgba(245, 158, 11, 0.5)',
+                      color: '#0F172A',
+                      cursor: submitting ? 'not-allowed' : 'pointer',
+                      opacity: submitting ? 0.7 : 1,
+                    }}
+                  >
+                    {submitting ? (
+                      <>
+                        <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Resoumission...
+                      </>
+                    ) : (
+                      <>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Resoumettre
                       </>
                     )}
                   </button>
@@ -877,7 +902,7 @@ export default function WorkflowDetailPage() {
             Retour à la liste des workflows
           </Link>
           
-          {workflow.status === 'COMPLETED' && (
+          {['COMPLETED', 'PARTIAL_FAILURE', 'RUNNING', 'FAILED', 'AGGREGATING'].includes(workflow.status) && (
             <Link
               href={`/workflows/${workflow.id}/results`}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300" style={{

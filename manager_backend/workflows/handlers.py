@@ -112,7 +112,19 @@ def submit_workflow_handler(workflow_id: str, callback: Optional[Callable[[Dict[
         # Estimer les ressources
         estimated_resources = None
         if workflow.workflow_type == WorkflowType.ML_TRAINING:
-            estimated_resources = estimate_ml_training_resources(workflow.input_data_size)
+            try:
+                path = workflow.input_path or workflow.executable_path
+                estimated_resources = estimate_ml_training_resources(path) if path else None
+            except Exception as est_err:
+                logger.warning(f"Estimation ML fallback: {est_err}")
+                estimated_resources = None
+            if not estimated_resources:
+                estimated_resources = {
+                    'cpu_cores': 2,
+                    'memory_mb': 2048,
+                    'disk_space_mb': 4096,
+                    'gpu': False,
+                }
         elif workflow.workflow_type == WorkflowType.ML_INFERENCE:
             estimated_resources = estimate_ml_inference_resources(workflow.input_data_size)
         elif workflow.workflow_type == WorkflowType.MATRIX_ADDITION:
@@ -140,89 +152,61 @@ def submit_workflow_handler(workflow_id: str, callback: Optional[Callable[[Dict[
         else:
             logger.warning(f"Estimation des ressources echouée pour le workflow: {estimated_resources}")
         
+        owner_remote_id = getattr(workflow.owner, 'remote_id', None)
+        if not owner_remote_id:
+            return False, {
+                'status': 'error',
+                'message': "Manager non synchronise avec le coordinateur (remote_id manquant)",
+            }
+
         # Préparer les données pour Redis
         data = {
             'workflow_id': str(workflow.id),
             'workflow_name': workflow.name,
             'workflow_description': workflow.description,
+            'description': workflow.description,
             'workflow_status': workflow.status,
             'created_at': workflow.created_at.isoformat() if hasattr(workflow.created_at, 'isoformat') else str(workflow.created_at),
             'workflow_type': workflow.workflow_type,
-            'owner': workflow.owner.remote_id,
+            'owner': owner_remote_id,
             'priority': workflow.priority,
             'estimated_resources': estimated_resources,
             'max_execution_time': workflow.max_execution_time,
             'input_data_size': workflow.input_data_size,
             'submitted_at': timezone.now().isoformat(),
-            'attemps' : workflow.retry_count,
+            'attempts': workflow.retry_count,
+            'attemps': workflow.retry_count,
         }
-        
-        # Générer et enregistrere un request_id 
-        request_id = str(uuid.uuid4())
-        
-        def handle_response(channel: str, message: Message):
-            # Vérifier si c'est une réponse à une soumission de workflow
-            if message.request_id == request_id:
-                logger.info(f"Réponse reçue pour la requête {request_id} sur le canal {channel}")
-                # Enregistrer la réponse
-                save_response(request_id, message.data)
-                logger.info(f"Réponse enregistrée: {message.data}")
-                
-                # Appeler le callback si fourni
-                if callback:
-                    logger.info(f"Appel du callback pour la réponse {request_id}")
-                    callback(message.data)
-                
-                # Se désabonner du canal
-                logger.info(f"Désabonnement du canal {channel} pour la requête {request_id}")
-                client.unsubscribe('workflow/submit_response', handle_response)
-            else:
-                logger.warning(f"Réponse ignorée: request_id ne correspond pas ({message.request_id} != {request_id})")
 
-        
-        # Obtenir l'instance du client Redis
-        client = RedisClient.get_instance()
-        token = get_manager_login_token()
-        # Publier le message avec le token JWT
-        logger.info(f"Soumission du workflow {workflow_id} au coordinateur")
-        client.subscribe('workflow/submit_response', handle_response)
+        token = get_manager_login_token(workflow.owner)
+        logger.info(f"Soumission du workflow {workflow_id} au coordinateur (RPC)")
         workflow.status = WorkflowStatus.SUBMITTED
-        workflow.save()
-        client.publish(
-            'workflow/submit', 
-            data, 
-            request_id=request_id,
+        workflow.save(update_fields=['status', 'estimated_resources', 'updated_at'])
+
+        from redis_communication.proxy_rpc import proxy_request_response
+
+        success, response_data = proxy_request_response(
+            'workflow/submit',
+            'workflow/submit_response',
+            data,
             token=token,
-            message_type="request"
+            sender_id=str(owner_remote_id),
+            timeout=float(timeout),
         )
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            response = get_response(request_id)
-            if response:
-                logger.info(f"Réponse trouvée pour la requête {request_id}: {response}")
-                # Supprimer la réponse du fichier
-                delete_response(request_id)
+        if callback:
+            try:
+                callback(response_data)
+            except Exception:
+                pass
 
-                # Vérifier le statut
-                response_data = response.get('response', {})
-                status = response_data.get('status')
-                logger.info(f"Statut de la réponse: {status}")
+        if success:
+            logger.info(f"Soumission reussie pour {workflow_id}")
+            return True, response_data
 
-                if status == 'success':
-                    logger.info(f"Enregistrement réussi pour {workflow_id}")
-                    return True, response_data
-                else:
-                    logger.info(f"Enregistrement échoué pour {workflow_id}")
-                    return False, response_data
-            time.sleep(0.5)  # Petite pause pour éviter de surcharger le CPU
-
-        # Timeout atteint sans réponse
-        logger.error(f"Timeout atteint pour la requête {request_id} (workflow {workflow_id})")
-        client.unsubscribe('workflow/submit_response', handle_response)
-        return False, {
-            'status': 'error',
-            'message': f'Timeout: aucune réponse du coordinateur après {timeout} secondes'
-        }
+        logger.info(f"Soumission echouee pour {workflow_id}: {response_data}")
+        workflow.status = WorkflowStatus.CREATED
+        workflow.save(update_fields=['status', 'updated_at'])
+        return False, response_data
 
     except Workflow.DoesNotExist:
         logger.error(f"Workflow {workflow_id} non trouvé")

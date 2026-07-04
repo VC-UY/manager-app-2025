@@ -1,12 +1,13 @@
 // app/volunteers/page.tsx
 "use client"
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { volunteerService } from '@/lib/api';
 import { Volunteer } from '../../lib/types';
 import Link from 'next/link';
 import { ProfileModal } from '@/components/ProfileModal';
 import { ManagerNav } from '@/components/ManagerNav';
+import { useManagerWebSocket } from '@/hooks/useManagerWebSocket';
 
 export default function VolunteersPage() {
   const [volunteers, setVolunteers] = useState<Volunteer[]>([]);
@@ -15,28 +16,40 @@ export default function VolunteersPage() {
   const [filter, setFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        
-        let volunteerData;
-        if (filter === 'all') {
-          volunteerData = await volunteerService.getVolunteers();
-        } else {
-          volunteerData = await volunteerService.getVolunteersByStatus(filter);
-        }
-        
-        setVolunteers(volunteerData);
-        setLoading(false);
-      } catch (err: any) {
-        setError(err.error || 'Une erreur est survenue');
-        setLoading(false);
-      }
-    };
+  const fetchData = useCallback(async (silent = false) => {
+    try {
+      if (!silent) setLoading(true);
 
-    fetchData();
+      let volunteerData;
+      if (filter === 'all') {
+        volunteerData = await volunteerService.getVolunteers();
+      } else {
+        volunteerData = await volunteerService.getVolunteersByStatus(filter);
+      }
+
+      setVolunteers(Array.isArray(volunteerData) ? volunteerData : volunteerData?.results || []);
+      setError(null);
+    } catch (err: any) {
+      if (!silent) setError(err.error || 'Une erreur est survenue');
+    } finally {
+      if (!silent) setLoading(false);
+    }
   }, [filter]);
+
+  useEffect(() => {
+    fetchData(false);
+    // Rafraîchissement régulier (présence heartbeat ~20s)
+    const timer = setInterval(() => fetchData(true), 5000);
+    return () => clearInterval(timer);
+  }, [fetchData]);
+
+  useManagerWebSocket({
+    showToasts: false,
+    handlers: {
+      onVolunteerStatus: () => fetchData(true),
+      onVolunteerUpdate: () => fetchData(true),
+    },
+  });
 
   const filteredVolunteers = volunteers.filter(volunteer => {
     const matchesSearch = searchTerm === '' || 
@@ -47,13 +60,14 @@ export default function VolunteersPage() {
   });
 
   const getStatusInfo = (status: string) => {
+    const key = (status || '').toUpperCase();
     const statusMap: Record<string, any> = {
       'AVAILABLE': { color: '#00D4FF', bg: 'rgba(0, 212, 255, 0.15)', label: 'Disponible', icon: '🟢' },
       'BUSY': { color: '#00B0F0', bg: 'rgba(0, 180, 240, 0.15)', label: 'Occupé', icon: '🔵' },
       'OFFLINE': { color: '#888888', bg: 'rgba(136, 136, 136, 0.15)', label: 'Hors ligne', icon: '⚪' },
       'MAINTENANCE': { color: '#FFA500', bg: 'rgba(255, 165, 0, 0.15)', label: 'Maintenance', icon: '🟠' }
     };
-    return statusMap[status] || { color: '#00B0F0', bg: 'rgba(0, 180, 240, 0.1)', label: status, icon: '❔' };
+    return statusMap[key] || { color: '#00B0F0', bg: 'rgba(0, 180, 240, 0.1)', label: status, icon: '❔' };
   };
 
   return (
@@ -117,9 +131,9 @@ export default function VolunteersPage() {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               {[
                 { label: 'Total', value: volunteers.length, color: '#00D4FF', icon: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0-8 4 4 0 0 0 0 8z' },
-                { label: 'Disponibles', value: volunteers.filter(v => v.status === 'AVAILABLE').length, color: '#00FF88', icon: 'M5 13l4 4L19 7' },
-                { label: 'Occupés', value: volunteers.filter(v => v.status === 'BUSY').length, color: '#00B0F0', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
-                { label: 'Hors ligne', value: volunteers.filter(v => v.status === 'OFFLINE').length, color: '#888888', icon: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0' }
+                { label: 'Disponibles', value: volunteers.filter(v => (v.status || '').toLowerCase() === 'available').length, color: '#00FF88', icon: 'M5 13l4 4L19 7' },
+                { label: 'Occupés', value: volunteers.filter(v => (v.status || '').toLowerCase() === 'busy').length, color: '#00B0F0', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
+                { label: 'Hors ligne', value: volunteers.filter(v => (v.status || '').toLowerCase() === 'offline').length, color: '#888888', icon: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0' }
               ].map((stat, idx) => (
                 <div key={idx} className="p-4 rounded-xl backdrop-blur-sm transition-all duration-300"
                   style={{

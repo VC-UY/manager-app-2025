@@ -8,13 +8,34 @@ class VolunteerSerializer(serializers.ModelSerializer):
     """
     Sérialiseur de base pour le modèle Volunteer.
     """
+    is_online = serializers.SerializerMethodField()
+
     class Meta:
         model = Volunteer
         fields = [
             'id', 'name', 'hostname', 'ip_address', 'last_ip_address',
             'cpu_cores', 'ram_mb', 'disk_gb', 'gpu', 'available', 'status',
-            'last_seen', 'tags'
+            'last_seen', 'tags', 'is_online',
         ]
+
+    def get_is_online(self, obj):
+        from datetime import timedelta
+        from django.utils import timezone
+        from volunteers.presence import ONLINE_TTL_SECONDS
+
+        if obj.status == "offline" or not obj.available:
+            return False
+        if not obj.last_seen:
+            return False
+        return obj.last_seen >= timezone.now() - timedelta(seconds=ONLINE_TTL_SECONDS)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Statut affiché = offline si pas de heartbeat récent
+        if not data.get("is_online"):
+            data["status"] = "offline"
+            data["available"] = False
+        return data
 
 class VolunteerDetailSerializer(serializers.ModelSerializer):
     """

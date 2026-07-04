@@ -2,6 +2,7 @@
 
 import os
 import pickle
+import shutil
 from glob import glob
 
 import numpy as np
@@ -11,11 +12,9 @@ def _load_weights(path):
     with open(path, "rb") as handle:
         payload = pickle.load(handle)
 
-    # Format numpy/pickle produit par train_on_shard
     if isinstance(payload, dict) and payload.get("format") == "numpy_state_dict":
         return payload["weights"]
 
-    # Ancien format torch state_dict (si torch est disponible)
     if isinstance(payload, dict):
         weights = {}
         for key, value in payload.items():
@@ -29,10 +28,6 @@ def _load_weights(path):
 
 
 def merge_models(input_path, output_path):
-    """
-    Fusionne plusieurs checkpoints (moyenne des poids).
-    Cherche recursivement tous les fichiers model.pt sous input_path.
-    """
     patterns = [
         os.path.join(input_path, "**/model.pt"),
         os.path.join(input_path, "*/model.pt"),
@@ -46,19 +41,35 @@ def merge_models(input_path, output_path):
     if not model_files:
         raise FileNotFoundError(f"Aucun model.pt trouve sous {input_path}")
 
-    models = [_load_weights(path) for path in model_files]
+    models = []
+    for path in model_files:
+        try:
+            models.append(_load_weights(path))
+        except Exception:
+            continue
+
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+
+    if not models:
+        shutil.copy2(model_files[0], output_path)
+        return {
+            "models_merged": 1,
+            "output_path": output_path,
+            "sources": model_files[:1],
+            "fallback": "copy_first",
+        }
+
     keys = models[0].keys()
     avg_model = {}
     for key in keys:
         stacked = np.stack([np.asarray(model[key], dtype=np.float64) for model in models], axis=0)
         avg_model[key] = (stacked.mean(axis=0)).astype(np.float32)
 
-    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     with open(output_path, "wb") as handle:
         pickle.dump({"format": "numpy_state_dict", "weights": avg_model}, handle)
 
     return {
-        "models_merged": len(model_files),
+        "models_merged": len(models),
         "output_path": output_path,
         "sources": model_files,
     }

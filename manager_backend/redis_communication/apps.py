@@ -87,6 +87,72 @@ def _bootstrap_redis():
         logger.error(traceback.format_exc())
 
 
+def _pending_assignment_loop():
+    """Présence + assignation periodique des workflows en attente."""
+    import time
+
+    time.sleep(10)
+    while True:
+        try:
+            from tasks.assignment import assign_and_publish, publish_assignments
+            from tasks.models import TaskStatus
+            from volunteers.presence import (
+                get_online_volunteers_data,
+                release_stale_assignments,
+                sweep_stale_volunteers,
+            )
+            from workflows.models import Workflow, WorkflowStatus
+
+            offline_n = sweep_stale_volunteers()
+            released_n = release_stale_assignments()
+            if offline_n or released_n:
+                logger.info(
+                    "Presence: %s offline, %s taches liberees",
+                    offline_n,
+                    released_n,
+                )
+
+            volunteers_data = get_online_volunteers_data()
+            if volunteers_data:
+                pending = Workflow.objects.filter(
+                    status__in=[
+                        WorkflowStatus.PENDING,
+                        WorkflowStatus.SUBMITTED,
+                        WorkflowStatus.ASSIGNING,
+                        WorkflowStatus.RUNNING,
+                    ]
+                )
+                for workflow in pending:
+                    # Nouvelles taches CREATED
+                    if workflow.tasks.filter(status=TaskStatus.CREATED).exists():
+                        result = assign_and_publish(workflow, volunteers_data)
+                        logger.info(
+                            "Reprise assignation workflow %s: %s",
+                            workflow.id,
+                            result.get("message"),
+                        )
+                    # Republication des ASSIGNED non acceptes vers volontaires en ligne
+                    elif workflow.tasks.filter(status=TaskStatus.ASSIGNED).exists():
+                        from tasks.assignment import assign_workflow_to_volunteers
+
+                        assignment = assign_workflow_to_volunteers(
+                            workflow, volunteers_data
+                        )
+                        if assignment:
+                            count = publish_assignments(workflow, assignment)
+                            if count:
+                                workflow.status = WorkflowStatus.RUNNING
+                                workflow.save(update_fields=["status", "updated_at"])
+                                logger.info(
+                                    "Republication %s tache(s) workflow %s",
+                                    count,
+                                    workflow.id,
+                                )
+        except Exception as exc:
+            logger.warning("Boucle d'assignation en attente: %s", exc)
+        time.sleep(15)
+
+
 class RedisCommunicationConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'redis_communication'
@@ -98,4 +164,5 @@ class RedisCommunicationConfig(AppConfig):
 
         logger.info("Initialisation du service de communication Redis...")
         threading.Thread(target=_bootstrap_redis, daemon=True).start()
+        threading.Thread(target=_pending_assignment_loop, daemon=True).start()
         logger.debug("Service de communication Redis demarre en arriere-plan")

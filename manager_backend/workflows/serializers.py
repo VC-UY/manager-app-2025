@@ -63,7 +63,10 @@ class WorkflowSerializer(serializers.ModelSerializer):
     class Meta:
         model = Workflow
         fields = '__all__'
-        read_only_fields = ('id', 'created_at', 'updated_at', 'submitted_at', 'completed_at', 'owner', 'owner_username')
+        read_only_fields = (
+            'id', 'created_at', 'updated_at', 'submitted_at', 'completed_at',
+            'owner', 'owner_username', 'status',
+        )
     
     def get_owner_username(self, obj):
         return obj.owner.username if obj.owner else None

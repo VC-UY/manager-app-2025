@@ -30,7 +30,11 @@ export default function CreateWorkflowPage() {
     output_path: '',
     priority: 1,
     max_execution_time: 3600,
-    retry_count: 3
+    retry_count: 3,
+    // CUSTOM uniquement — obligatoires pour un vrai workflow
+    custom_command: '',
+    custom_docker_image: '',
+    custom_num_tasks: 1,
   });
 
   const [loading, setLoading] = useState(false);
@@ -44,7 +48,7 @@ export default function CreateWorkflowPage() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     
-    if (name === 'priority' || name === 'max_execution_time' || name === 'retry_count') {
+    if (name === 'priority' || name === 'max_execution_time' || name === 'retry_count' || name === 'custom_num_tasks') {
       const numValue = parseInt(value, 10);
       setFormData(prev => ({
         ...prev,
@@ -159,18 +163,53 @@ export default function CreateWorkflowPage() {
     setError(null);
 
     try {
-      const dataToSubmit = {
-        ...formData,
+      if (formData.workflow_type === 'CUSTOM') {
+        const cmd = formData.custom_command.trim();
+        const image = formData.custom_docker_image.trim();
+        if (!cmd || cmd === 'true' || cmd.toLowerCase().startsWith('echo ')) {
+          setError('Workflow personnalisé : indiquez une commande réelle (ex. python app.py).');
+          setLoading(false);
+          return;
+        }
+        if (!image || image === 'vcuy-custom:latest') {
+          setError('Workflow personnalisé : indiquez une image Docker réelle (ex. python:3.12-slim).');
+          setLoading(false);
+          return;
+        }
+      }
+
+      const { custom_command, custom_docker_image, custom_num_tasks, ...base } = formData;
+      const dataToSubmit: Record<string, unknown> = {
+        ...base,
         priority: isNaN(formData.priority) ? 1 : formData.priority,
         max_execution_time: isNaN(formData.max_execution_time) ? 3600 : formData.max_execution_time,
-        retry_count: isNaN(formData.retry_count) ? 3 : formData.retry_count
+        retry_count: isNaN(formData.retry_count) ? 3 : formData.retry_count,
       };
+
+      if (formData.workflow_type === 'CUSTOM') {
+        const image = custom_docker_image.trim();
+        const [name, tag] = image.includes(':') ? image.split(':') : [image, 'latest'];
+        dataToSubmit.metadata = {
+          command: custom_command.trim(),
+          num_tasks: Math.max(1, Math.min(64, custom_num_tasks || 1)),
+          docker_info: {
+            name,
+            tag: tag || 'latest',
+            image_name: image.includes(':') ? image : `${image}:latest`,
+          },
+        };
+      }
 
       const response = await workflowService.createWorkflow(dataToSubmit);
       router.push(`/workflows/${response.id}`);
     } catch (err: any) {
       console.error('Erreur lors de la création du workflow:', err);
-      setError(err.error ?? 'Une erreur est survenue lors de la création du workflow');
+      const detail =
+        err?.metadata ||
+        err?.error ||
+        (typeof err === 'object' ? Object.values(err).flat?.()?.[0] : null) ||
+        'Une erreur est survenue lors de la création du workflow';
+      setError(typeof detail === 'string' ? detail : JSON.stringify(detail));
     } finally {
       setLoading(false);
     }
@@ -370,11 +409,82 @@ export default function CreateWorkflowPage() {
                       {formData.workflow_type === 'MATRIX_ADDITION' && "Ce type de workflow est optimisé pour les additions de matrices de grande taille."}
                       {formData.workflow_type === 'MATRIX_MULTIPLICATION' && "Ce type de workflow est optimisé pour les multiplications de matrices de grande taille."}
                       {formData.workflow_type === 'OPEN_MALARIA' && "Ce type de workflow est optimisé pour les simulations épidémiologiques complexes."}
-                      {formData.workflow_type === 'CUSTOM' && "Vous avez sélectionné un type personnalisé. Vous pourrez configurer tous les paramètres manuellement."}
+                      {formData.workflow_type === 'CUSTOM' && "Commande réelle + image Docker obligatoires. Aucun workflow vide n'est accepté."}
                     </p>
                   </div>
                 </div>
               </div>
+
+              {formData.workflow_type === 'CUSTOM' && (
+                <div className="mt-6 space-y-4 p-4 rounded-lg" style={{
+                  background: 'rgba(245, 158, 11, 0.08)',
+                  border: '1px solid rgba(245, 158, 11, 0.25)',
+                }}>
+                  <p className="text-sm font-medium" style={{ color: '#FBBF24' }}>
+                    Configuration personnalisée (obligatoire)
+                  </p>
+                  <div>
+                    <label htmlFor="custom_command" className="block text-sm font-medium mb-2" style={{ color: '#CBD5E1' }}>
+                      Commande à exécuter *
+                    </label>
+                    <input
+                      id="custom_command"
+                      name="custom_command"
+                      type="text"
+                      required
+                      value={formData.custom_command}
+                      onChange={handleChange}
+                      placeholder="python app.py --input /data/in"
+                      className="w-full px-4 py-3 rounded-lg"
+                      style={{
+                        background: 'rgba(15, 23, 42, 0.5)',
+                        border: '1px solid rgba(71, 85, 105, 0.4)',
+                        color: '#FFFFFF',
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="custom_docker_image" className="block text-sm font-medium mb-2" style={{ color: '#CBD5E1' }}>
+                      Image Docker *
+                    </label>
+                    <input
+                      id="custom_docker_image"
+                      name="custom_docker_image"
+                      type="text"
+                      required
+                      value={formData.custom_docker_image}
+                      onChange={handleChange}
+                      placeholder="python:3.12-slim ou mon-registre/mon-image:1.0"
+                      className="w-full px-4 py-3 rounded-lg"
+                      style={{
+                        background: 'rgba(15, 23, 42, 0.5)',
+                        border: '1px solid rgba(71, 85, 105, 0.4)',
+                        color: '#FFFFFF',
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="custom_num_tasks" className="block text-sm font-medium mb-2" style={{ color: '#CBD5E1' }}>
+                      Nombre de tâches
+                    </label>
+                    <input
+                      id="custom_num_tasks"
+                      name="custom_num_tasks"
+                      type="number"
+                      min={1}
+                      max={64}
+                      value={formData.custom_num_tasks}
+                      onChange={handleChange}
+                      className="w-full px-4 py-3 rounded-lg"
+                      style={{
+                        background: 'rgba(15, 23, 42, 0.5)',
+                        border: '1px solid rgba(71, 85, 105, 0.4)',
+                        color: '#FFFFFF',
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </motion.div>
 

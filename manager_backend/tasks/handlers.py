@@ -143,40 +143,56 @@ def handle_task_progress(channel: str, message: Message):
         # Récupérer les objets
 
         from workflows.models import Workflow
-        from tasks.models import Task
+        from tasks.models import Task, TaskStatus
         from volunteers.models import Volunteer, VolunteerTask
         workflow = Workflow.objects.get(id=workflow_id)
         task = Task.objects.get(id=task_id)
         volunteer = Volunteer.objects.get(coordinator_volunteer_id=volunteer_id)
-
-
-                
-            # Vérifier si la tâche est déjà assignée à ce volontaire
         volunteer_task = VolunteerTask.objects.filter(task=task, volunteer=volunteer).first()
 
+        try:
+            progress_value = float(progress)
+        except (TypeError, ValueError):
+            progress_value = 0.0
+        progress_value = max(0.0, min(100.0, progress_value))
+
+        # Toujours synchroniser Task.progress (source de vérité API / coordinator)
+        task.progress = progress_value
+        if progress_value > 0 and task.status in (
+            TaskStatus.CREATED, TaskStatus.PENDING, TaskStatus.ASSIGNED,
+        ):
+            task.status = TaskStatus.RUNNING
+            if not task.start_time:
+                task.start_time = timezone.now()
+        task.save()
 
         if volunteer_task:
-            # Mettre à jour le statut de l'assignation
-            volunteer_task.progress = progress
+            volunteer_task.progress = progress_value
+            if progress_value > 0 and volunteer_task.status in ('ASSIGNED', 'ACCEPTED', 'CREATED'):
+                volunteer_task.status = 'RUNNING'
+                if not volunteer_task.started_at:
+                    volunteer_task.started_at = timezone.now()
             volunteer_task.save()
-            logger.info(f"Assignation mise à jour: tâche {task.name} en cours par le volontaire {volunteer.name}, progression: {progress}%")
-            
-            # Notifier la progression via WebSocket
-            from websocket_service.client import notify_event
-            notify_event('task_progress', {
-                'workflow_id': str(workflow.id),
-                'task_id': str(task.id),
-                'progress': progress,
-                'volunteer': volunteer.name,
-                'message': f"Progression de la tâche {task.name}: {progress}%"
-            })
-            
-            return True
-
+            logger.info(
+                "Progression synchronisée: tâche %s = %s%% (volontaire %s)",
+                task.name, progress_value, volunteer.name,
+            )
         else:
-            # Generer un message d'erreur
-            logger.error(f"Pas d'assignation de tache entre le volontaire {volunteer.name} et la tache {task.name}")
-            return False
+            logger.warning(
+                "Progression tâche %s sans assignation volontaire %s — Task.progress mis à jour",
+                task.name, volunteer.name,
+            )
+
+        from websocket_service.client import notify_event
+        notify_event('task_progress', {
+            'workflow_id': str(workflow.id),
+            'task_id': str(task.id),
+            'progress': progress_value,
+            'status': task.status,
+            'volunteer': volunteer.name if volunteer_task else None,
+            'message': f"Progression de la tâche {task.name}: {progress_value}%",
+        })
+        return True
     except Workflow.DoesNotExist:
         logger.error(f"Le workflow {workflow_id} n'existe pas")
     except Task.DoesNotExist:
@@ -313,7 +329,11 @@ def handle_task_status(channel: str, message: Message):
                     if success:
                         task.output_files = downloaded_files
                         task.status = TaskStatus.COMPLETED
+                        task.progress = 100
                         task.end_time = timezone.now()
+                        volunteer_task.progress = 100
+                        volunteer_task.status = 'COMPLETED'
+                        volunteer_task.save()
                         task.save()
                         logger.info(f"Tâche {task.name} terminée avec succès, fichiers téléchargés")
                         
@@ -377,23 +397,46 @@ def handle_task_status(channel: str, message: Message):
             task.save()
             logger.info(f"Tâche {task.name} mise en pause par le volontaire {volunteer.name}")
         
-        elif status.lower() == 'progress':
+        elif status.lower() in ('progress', 'running', 'started'):
+            try:
+                progress_value = float(data.get('progress', task.progress) or 0)
+            except (TypeError, ValueError):
+                progress_value = float(task.progress or 0)
+            progress_value = max(0.0, min(100.0, progress_value))
 
-            # Notifier le changement de statut via WebSocket
+            task.status = TaskStatus.RUNNING
+            task.progress = progress_value
+            if not task.start_time:
+                task.start_time = timezone.now()
+            task.save()
+
+            volunteer_task.status = 'RUNNING'
+            volunteer_task.progress = progress_value
+            if not volunteer_task.started_at:
+                volunteer_task.started_at = timezone.now()
+            volunteer_task.save()
+
             from websocket_service.client import notify_event
             notify_event('task_status_change', {
                 'workflow_id': str(workflow.id),
                 'task_id': str(task.id),
-                'status': 'progress',
+                'status': TaskStatus.RUNNING,
+                'progress': progress_value,
                 'volunteer': volunteer.name,
-                'message': f"Tâche {task.name} en cours d'exécution par {volunteer.name}"
+                'message': f"Tâche {task.name} en cours ({progress_value}%)",
             })
-            
-            # La tâche est en cours
-            task.status = 'running'
-            task.save()
-            volunteer_task.status = 'running'
-            logger.info(f"Tâche {task.name} en cours d'exécution par le volontaire {volunteer.name}")
+            notify_event('task_progress', {
+                'workflow_id': str(workflow.id),
+                'task_id': str(task.id),
+                'progress': progress_value,
+                'status': TaskStatus.RUNNING,
+                'volunteer': volunteer.name,
+                'message': f"Progression de la tâche {task.name}: {progress_value}%",
+            })
+            logger.info(
+                "Tâche %s en cours par %s — progression %s%%",
+                task.name, volunteer.name, progress_value,
+            )
         
         elif status.lower() == 'stopped' or status.lower() == 'cancel':
 

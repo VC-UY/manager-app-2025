@@ -1157,6 +1157,30 @@ def generate_openmalaria_scenario(population_size, output_dir, shard_id):
     logger.info(f"Scénario généré pour shard {shard_id} à {scenario_path}")
     return scenario_path
 
+def _write_synthetic_ml_shards(input_dir, num_shards, samples_per_shard, logger):
+    """Genere des shards CIFAR-like sans telecharger le dataset (demo rapide).
+
+    Utilise des listes Python pures (pas numpy) pour etre lisible dans le
+    conteneur worker qui n'embarque pas numpy.
+    """
+    import random
+
+    os.makedirs(input_dir, exist_ok=True)
+    samples_per_shard = max(32, int(samples_per_shard))
+    for i in range(num_shards):
+        shard_dir = os.path.join(input_dir, f"shard_{i}")
+        os.makedirs(shard_dir, exist_ok=True)
+        data = [
+            [[[(s * 3 + c) % 256 for c in range(3)] for _ in range(32)] for _ in range(32)]
+            for s in range(samples_per_shard)
+        ]
+        labels = [random.randint(0, 99) for _ in range(samples_per_shard)]
+        with open(os.path.join(shard_dir, "data.pkl"), "wb") as handle:
+            pickle.dump((data, labels), handle)
+        if logger:
+            logger.warning("Shard synthetique %s: %s samples", i, samples_per_shard)
+
+
 def split_ml_training_workflow(workflow_instance: Workflow, logger:logging.Logger):
     """
     Effectue le découpage pour un workflow ML_TRAINING à partir du script externe.
@@ -1164,34 +1188,30 @@ def split_ml_training_workflow(workflow_instance: Workflow, logger:logging.Logge
     dataset_path = os.path.join(workflow_instance.executable_path, "data")
     input_dir = os.path.join(workflow_instance.executable_path, "inputs")
 
-    # S'assurer que le dataset est présent
-    download_cifar100_if_needed(dataset_path)
-
     # Étape 1: déterminer ressources min
     min_resources = get_min_volunteer_resources()
 
-    # Étape 2: estimer nb de shards à partir du dataset complet
-    data_batch_path = os.path.join(dataset_path, "cifar-100-python", "train")
-    with open(data_batch_path, "rb") as f:
-        dataset = pickle.load(f, encoding='latin1')
-    dataset_len = len(dataset["data"])
-
     # Pour une demo propre: 2 a 4 shards max
     metadata = workflow_instance.metadata or {}
-    num_shards = int(metadata.get("num_tasks") or min(4, max(2, estimate_required_shards(dataset_len, min_resources["min_ram"]))))
-
-    # Étape 3: appeler le script de découpage
-    from workflows.examples.cifar100_training.split_dataset import split_dataset
+    num_shards = int(metadata.get("num_tasks") or 2)
     samples_per_shard = int(metadata.get("samples_per_shard", 512))
-    logger.warning(f"Appel de la fonction de decouppage de ml. Dataset path: {dataset_path}, Output path: {input_dir}")
     os.makedirs(input_dir, exist_ok=True)
-    split_dataset(
-        num_shards,
-        path=input_dir,
-        dataset_path=dataset_path,
-        logger=logger,
-        samples_per_shard=samples_per_shard,
-    )
+
+    # Preferer des shards synthetiques (rapide, pas de dependance reseau)
+    use_synthetic = metadata.get("synthetic", True)
+    if use_synthetic:
+        logger.warning("Generation de shards ML synthetiques (demo)")
+        _write_synthetic_ml_shards(input_dir, num_shards, samples_per_shard, logger)
+    else:
+        download_cifar100_if_needed(dataset_path)
+        from workflows.examples.cifar100_training.split_dataset import split_dataset
+        split_dataset(
+            num_shards,
+            path=input_dir,
+            dataset_path=dataset_path,
+            logger=logger,
+            samples_per_shard=samples_per_shard,
+        )
     logger.warning(f"Decouppage en {num_shards} shards Ok.")
     logger.warning("Creation de taches.")
 

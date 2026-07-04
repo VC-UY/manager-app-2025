@@ -218,45 +218,48 @@ for path in _MODEL_PATHS:
 if MODEL_PATH is None:
     logger.warning("Modèle A3C non trouvé. L'algorithme A3C utilisera FCFS comme fallback.")
 
-class ActorCriticNet(nn.Module):
-    def __init__(self, input_dim, action_dim):
-        super(ActorCriticNet, self).__init__()
-        self.input_dim = input_dim
-        self.action_dim = action_dim
-        self.shared = nn.Sequential(
-            nn.Linear(input_dim, 64),
-            nn.ReLU(),
-            nn.Linear(64, 32),
-            nn.ReLU()
-        )
-        self.actor = nn.Linear(32, action_dim)
-        self.critic = nn.Linear(32, 1)
-        self._initialize_weights()
+if TORCH_AVAILABLE:
+    class ActorCriticNet(nn.Module):
+        def __init__(self, input_dim, action_dim):
+            super(ActorCriticNet, self).__init__()
+            self.input_dim = input_dim
+            self.action_dim = action_dim
+            self.shared = nn.Sequential(
+                nn.Linear(input_dim, 64),
+                nn.ReLU(),
+                nn.Linear(64, 32),
+                nn.ReLU()
+            )
+            self.actor = nn.Linear(32, action_dim)
+            self.critic = nn.Linear(32, 1)
+            self._initialize_weights()
 
-    def _initialize_weights(self):
-        for m in self.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('relu'))
-                if m.bias is not None:
-                    nn.init.zeros_(m.bias)
+        def _initialize_weights(self):
+            for m in self.modules():
+                if isinstance(m, nn.Linear):
+                    nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('relu'))
+                    if m.bias is not None:
+                        nn.init.zeros_(m.bias)
 
-    def forward(self, x):
-        if x.size(-1) < self.input_dim:
-            x = torch.cat([x, torch.zeros(x.size(0), self.input_dim - x.size(-1)).to(x.device)], dim=-1)
-        elif x.size(-1) > self.input_dim:
-            x = x[:, :self.input_dim]
-        if torch.isnan(x).any():
-            logger.error(f"NaN détecté dans l'entrée : {x}")
-        x = self.shared(x)
-        if torch.isnan(x).any():
-            logger.error(f"NaN détecté dans la sortie partagée : {x}")
-        policy_logits = self.actor(x)
-        policy_logits = torch.clamp(policy_logits, -3, 3)
-        policy_logits = F.softmax(policy_logits, dim=-1)
-        if torch.isnan(policy_logits).any():
-            logger.error(f"NaN détecté dans policy_logits : {policy_logits}")
-        value = self.critic(x)
-        return policy_logits, value
+        def forward(self, x):
+            if x.size(-1) < self.input_dim:
+                x = torch.cat([x, torch.zeros(x.size(0), self.input_dim - x.size(-1)).to(x.device)], dim=-1)
+            elif x.size(-1) > self.input_dim:
+                x = x[:, :self.input_dim]
+            if torch.isnan(x).any():
+                logger.error(f"NaN détecté dans l'entrée : {x}")
+            x = self.shared(x)
+            if torch.isnan(x).any():
+                logger.error(f"NaN détecté dans la sortie partagée : {x}")
+            policy_logits = self.actor(x)
+            policy_logits = torch.clamp(policy_logits, -3, 3)
+            policy_logits = F.softmax(policy_logits, dim=-1)
+            if torch.isnan(policy_logits).any():
+                logger.error(f"NaN détecté dans policy_logits : {policy_logits}")
+            value = self.critic(x)
+            return policy_logits, value
+else:
+    ActorCriticNet = None  # type: ignore
 
 def load_model(model, model_path, expected_input_dim, expected_action_dim):
     """

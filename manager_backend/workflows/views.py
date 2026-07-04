@@ -52,7 +52,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         os.makedirs(workflow.executable_path, exist_ok=True)
         os.makedirs(workflow.input_path, exist_ok=True)
         os.makedirs(workflow.output_path, exist_ok=True)
-        # Parametres de demo pour ML / OpenMalaria
+        # Parametres de demo pour ML / OpenMalaria ; CUSTOM exige une vraie config
         metadata = workflow.metadata or {}
         if workflow.workflow_type == 'ML_TRAINING':
             metadata.setdefault('num_tasks', 2)
@@ -60,6 +60,14 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         if workflow.workflow_type == 'OPEN_MALARIA':
             metadata.setdefault('num_tasks', 2)
             metadata.setdefault('population_per_task', 500)
+        if workflow.workflow_type == 'CUSTOM':
+            from rest_framework.exceptions import ValidationError
+            from workflows.custom_validation import validate_custom_metadata
+
+            ok, err, metadata = validate_custom_metadata(metadata)
+            if not ok:
+                workflow.delete()
+                raise ValidationError({'metadata': err})
         workflow.metadata = metadata
         workflow.save()
 
@@ -191,180 +199,65 @@ def process_workflow_submission(workflow_id):
                     'message': f'Découpage terminé, {len(tasks) if tasks else 0} tâches créées'
                 })
                 
-                # Mettre à jour le statut du workflow
+                # Assigner ou attendre un volontaire (jamais d'echec pour absence de volontaire)
                 volunteers = response.get('volunteers') if isinstance(response, dict) else None
-                if volunteers:
-                    thread_logger.info(f"Volontaires disponibles: {len(volunteers)}")
-                    workflow.status = WorkflowStatus.ASSIGNING
-                    workflow.save()
-                    
-                    # Notifier le début de l'assignation
-                    thread_logger.info(f"Notification du début de l'assignation")
-                    notify_event('workflow_status_change', {
-                        'workflow_id': str(workflow_id),
-                        'status': 'ASSIGNING',
-                        'message': 'Attribution des tâches aux volontaires...'
-                    })
-                    
-                    thread_logger.info(f"Lancement de l'assignation")
-                    from tasks.scheduller import assign_workflow_to_volunteers
-                    thread_logger.info(f"Volontaires disponibles: {volunteers}")
-                    
-                    # Assigner les tâches
-                    assignment_result = assign_workflow_to_volunteers(workflow, volunteers)
-                    thread_logger.info(f"Résultat de l'assignation: {assignment_result}")
+                from tasks.assignment import assign_and_publish
 
-                    # Vérifier si des tâches ont été assignées
-                    if not assignment_result:
-                        thread_logger.warning("Aucune tâche n'a été assignée aux volontaires")
-                        notify_event('workflow_status_change', {
-                            'workflow_id': str(workflow_id),
-                            'status': 'ASSIGNMENT_FAILED',
-                            'message': 'Aucune tâche assignée aux volontaires'
-                        })
-                        return
+                assign_result = assign_and_publish(workflow, volunteers, server_port)
+                thread_logger.info("Assignation: %s", assign_result)
+                workflow.refresh_from_db()
 
-                    # Utiliser le serveur de fichiers déjà démarré (server_port)
-                    file_server_port = server_port
-                    thread_logger.info(f"Utilisation du serveur de fichiers sur le port {file_server_port}")
-                    
-                    # Préparer les informations de tâches complètes pour chaque volontaire
-                    thread_logger.info(f"Préparation des informations de tâches pour chaque volontaire")
-                    from tasks.models import Task
-                    
-                    # Récupérer l'adresse IP du serveur
-                    from redis_communication.utils import get_local_ip
-                    server_ip = get_local_ip()
-                    if not server_ip:
-                        server_ip = "127.0.0.1"
-                        thread_logger.warning(
-                            "IP locale indisponible, fallback vers %s pour enrichir les tâches",
-                            server_ip,
-                        )
-                    thread_logger.info(f"Adresse IP du serveur: {server_ip}")
-                    
-                    # Enrichir les informations d'assignation pour chaque volontaire
-                    enriched_assignments = {}
-                    for volunteer_id, task_list in assignment_result.items():
-                        enriched_tasks = []
-                        for task_info in task_list:
-                            task_id = task_info['task_id']
-                            task = Task.objects.get(id=task_id)
-                            
-                            from redis_communication.utils import build_task_file_transfer_info
-                            transfer = build_task_file_transfer_info(workflow, task, file_server_port)
-                            # Ajouter les informations complètes de la tâche
-                            enriched_task = {
-                                'task_id': task_id,
-                                'name': task.name,
-                                'workflow_id': str(workflow.id),
-                                'parameters': task.parameters,
-                                'estimated_execution_time': task.estimated_max_time,
-                                'input_data': transfer,
-                                'input_data_size': task.input_size,
-                                'docker_information': task.docker_info if hasattr(task, 'docker_info') else {}
-                            }
-                            enriched_tasks.append(enriched_task)
-                        
-                        enriched_assignments[volunteer_id] = enriched_tasks
-                    
-                    # Lancer l'ecoute des canaux task/accept et task/complete
-                    thread_logger.info(f"Lancement de l'ecoute des canaux task/accept et task/complete")
-                    from tasks.handlers import listen_for_task_accept, listen_for_task_complete, listen_for_task_status, listen_task_progress
-                    import uuid
-                    accept_success = listen_for_task_accept()
-                    complete_success = listen_for_task_complete()
-                    status_success = listen_for_task_status()
-                    progress_success = listen_task_progress()
-                    
-                    if accept_success and complete_success and status_success and progress_success:
-                        thread_logger.info(f"Souscription aux canaux task/accept et task/complete, task/status et task/progress réussie")
-                    else:
-                        thread_logger.warning(f"Problème lors de la souscription aux canaux: accept={accept_success}, complete={complete_success}, status={status_success}, progress={progress_success}")
-
-                    # Publier sur le canal d'assignment
-                    thread_logger.info(f"Publication sur le canal d'assignment")
-                    client = RedisClient.get_instance()
-                    from redis_communication.utils import get_coordinator_token_for_workflow
-                    
-                    client.publish('task/assignment',
-                        {
-                            'workflow_id': str(workflow_id),
-                            'assignments': enriched_assignments,
-                        },
-                        str(uuid.uuid4()),
-                        get_coordinator_token_for_workflow(workflow),
-                        'request'
+                try:
+                    from tasks.handlers import (
+                        listen_for_task_accept,
+                        listen_for_task_complete,
+                        listen_for_task_status,
+                        listen_task_progress,
                     )
+                    listen_for_task_accept()
+                    listen_for_task_complete()
+                    listen_for_task_status()
+                    listen_task_progress()
+                except Exception as listen_err:
+                    thread_logger.warning("Ecoute taches partielle: %s", listen_err)
 
-                    # Compter les tâches assignées
-                    total_tasks_assigned = sum(len(tasks) for tasks in enriched_assignments.values())
-                    thread_logger.info(f"Publication réussie: {total_tasks_assigned} tâches envoyées à {len(enriched_assignments)} volontaires")
-
-                    # Mettre à jour le statut du workflow à PENDING (en attente d'exécution)
-                    workflow.status = WorkflowStatus.PENDING
-                    workflow.save()
-
-                    # Notifier la fin de l'assignation
-                    notify_event('workflow_status_change', {
-                        'workflow_id': str(workflow_id),
-                        'status': 'PENDING',
-                        'message': f'{total_tasks_assigned} tâches attribuées à {len(enriched_assignments)} volontaires'
-                    })
-                else:
-                    thread_logger.info(f"Aucun volontaire reçu, lancement de l'écoute sur le canal d'assignment")
-                    
-                    # Notifier l'attente de volontaires
-                    thread_logger.info(f"Notification de l'attente de volontaires")
-                    notify_event('workflow_status_change', {
-                        'workflow_id': str(workflow_id),
-                        'status': 'WAITING_VOLUNTEERS',
-                        'message': 'En attente de volontaires disponibles...'
-                    })
-                    thread_logger.debug(f"Notification envoyée avec succès")
-                
-                # Lancer la fonction d'ecoute de la liste des volontaires chez le coordinateur
-                thread_logger.info(f"Lancement de la fonction d'ecoute de la liste des volontaires chez le coordinateur")
-                from workflows.handlers import listen_for_volunteers
-                listen_for_volunteers(workflow_id)
-                thread_logger.info(f"Fonction d'ecoute de la liste des volontaires chez le coordinateur lancée avec succès")
-                
-                # Notifier la fin du processus complet
-                thread_logger.info(f"Notification de la fin du processus complet")
                 notify_event('workflow_status_change', {
                     'workflow_id': str(workflow_id),
                     'status': workflow.status,
-                    'message': 'Processus de soumission terminé'
+                    'message': assign_result.get('message', 'Processus de soumission terminé'),
                 })
                 thread_logger.info(f"===== Fin du traitement asynchrone du workflow {workflow_id} =====")
                 
             except Exception as e:
                 thread_logger.error(f"ERREUR lors du traitement asynchrone du workflow: {e}")
                 import traceback
-                error_trace = traceback.format_exc()
-                thread_logger.error(f"Stacktrace détaillé:\n{error_trace}")
-                
-                # Mettre à jour le statut du workflow dans la base de données
+                thread_logger.error(traceback.format_exc())
+
                 try:
-                    workflow.status = 'ERROR'
-                    workflow.save()
-                    thread_logger.info(f"Statut du workflow mis à jour à 'ERROR' dans la base de données")
+                    workflow.refresh_from_db()
+                    if workflow.tasks.exists():
+                        workflow.status = WorkflowStatus.PENDING
+                        workflow.save(update_fields=['status', 'updated_at'])
+                        notify_event('workflow_status_change', {
+                            'workflow_id': str(workflow_id),
+                            'status': 'PENDING',
+                            'message': (
+                                'Soumission OK. Taches creees, en attente de volontaires '
+                                f'(detail: {e})'
+                            ),
+                        })
+                    else:
+                        workflow.status = WorkflowStatus.FAILED
+                        workflow.save(update_fields=['status', 'updated_at'])
+                        notify_event('workflow_status_change', {
+                            'workflow_id': str(workflow_id),
+                            'status': 'FAILED',
+                            'message': f'Erreur lors du traitement: {str(e)}',
+                        })
                 except Exception as db_error:
-                    thread_logger.error(f"Impossible de mettre à jour le statut du workflow dans la base de données: {db_error}")
+                    thread_logger.error(f"Impossible de mettre a jour le statut: {db_error}")
                 
-                # Notifier l'erreur
-                thread_logger.info(f"Envoi de la notification d'erreur")
-                try:
-                    notify_event('workflow_status_change', {
-                        'workflow_id': str(workflow_id),
-                        'status': 'ERROR',
-                        'message': f'Erreur lors du traitement: {str(e)}'
-                    })
-                    thread_logger.info(f"Notification d'erreur envoyée avec succès")
-                except Exception as notify_error:
-                    thread_logger.error(f"Impossible d'envoyer la notification d'erreur: {notify_error}")
-                
-                thread_logger.error(f"===== Fin du traitement asynchrone du workflow {workflow_id} avec ERREUR =====")
+                thread_logger.error(f"===== Fin du traitement asynchrone du workflow {workflow_id} =====")
         
         # Démarrer le traitement asynchrone
         import threading

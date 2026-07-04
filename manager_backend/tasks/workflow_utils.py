@@ -72,11 +72,14 @@ def _collect_task_files(workflow: Workflow, suffixes=None):
             if os.path.isfile(output_file):
                 if not suffixes or any(output_file.endswith(suffix) for suffix in suffixes):
                     files.append(output_file)
-    # Fallback: chercher sous output_path
+    # Fallback: chercher sous output_path (ignorer le staging de merge)
     output_root = _ensure_output_dir(workflow)
-    if suffixes:
+    if suffixes and not files:
         for suffix in suffixes:
-            files.extend(glob(os.path.join(output_root, f'**/*{suffix}'), recursive=True))
+            for path in glob(os.path.join(output_root, f'**/*{suffix}'), recursive=True):
+                if '_merge_staging' in path:
+                    continue
+                files.append(path)
     return sorted(set(files))
 
 

@@ -2,6 +2,7 @@
 Utilitaires divers pour le module de communication Redis.
 """
 
+import os
 import time
 import json
 import logging
@@ -71,6 +72,15 @@ def format_timestamp(timestamp: float) -> str:
     return datetime.fromtimestamp(timestamp).isoformat()
 
 
+def _manager_state_paths():
+    """Chemins persistants (/data) ou locaux."""
+    roots = []
+    if os.path.isdir('/data'):
+        roots.append('/data/.manager')
+    roots.append('.manager')
+    return roots
+
+
 def get_manager_login_token(user=None):
     """
     Recupere le token coordinateur du manager connecte ou du fichier legacy.
@@ -78,11 +88,26 @@ def get_manager_login_token(user=None):
     if user and getattr(user, 'coordinator_token', None):
         return user.coordinator_token
     try:
-        with open('.manager/manager_login_info.json', 'r') as f:
-            data = json.load(f)
-            return data['token']
-    except FileNotFoundError:
-        raise NoLoginError("Le fichier .manager/manager_login_info.json n'a pas été trouvé")
+        from workflows.models import User
+        token_user = (
+            User.objects.exclude(coordinator_token__isnull=True)
+            .exclude(coordinator_token='')
+            .order_by('-id')
+            .first()
+        )
+        if token_user and token_user.coordinator_token:
+            return token_user.coordinator_token
+    except Exception:
+        pass
+    for root in _manager_state_paths():
+        path = os.path.join(root, 'manager_login_info.json')
+        try:
+            with open(path, 'r') as f:
+                data = json.load(f)
+                return data['token']
+        except FileNotFoundError:
+            continue
+    raise NoLoginError("Le fichier .manager/manager_login_info.json n'a pas été trouvé")
 
 
 def get_coordinator_token_for_workflow(workflow):
@@ -96,17 +121,33 @@ def get_coordinator_token_for_workflow(workflow):
 
 def get_manager_id():
     """
-    Récupère l'ID du manager à partir du fichier .manager/manager_login_info.json.
+    Récupère l'ID du manager à partir du fichier .manager/manager_info.json.
     
     Returns:
         str: ID du manager
     """
     try:
-        with open('.manager/manager_info.json', 'r') as f:
-            data = json.load(f)
-            return data['remote_id']
-    except FileNotFoundError:
-        raise NoLoginError("Le fichier .manager/manager_info.json n'a pas été trouvé")
+        from workflows.models import User
+        user = (
+            User.objects.exclude(remote_id__isnull=True)
+            .exclude(remote_id='')
+            .order_by('-id')
+            .first()
+        )
+        if user and user.remote_id:
+            return user.remote_id
+    except Exception:
+        pass
+    for root in _manager_state_paths():
+        for name in ('manager_info.json', 'manager_login_info.json'):
+            path = os.path.join(root, name)
+            try:
+                with open(path, 'r') as f:
+                    data = json.load(f)
+                    return data.get('remote_id') or data.get('manager_id')
+            except FileNotFoundError:
+                continue
+    raise NoLoginError("Le fichier .manager/manager_info.json n'a pas été trouvé")
 
 
 def get_local_ip():

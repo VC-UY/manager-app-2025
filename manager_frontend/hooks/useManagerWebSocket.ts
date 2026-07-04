@@ -1,36 +1,83 @@
-import { useEffect } from 'react';
+'use client';
 
-export function useManagerWebSocket(onEvent: (event: any) => void) {
+import { useEffect, useRef } from 'react';
+import {
+  ManagerRealtimeClient,
+  RealtimeEvent,
+  RealtimeHandlers,
+} from '@/lib/realtime';
+
+export interface UseManagerWebSocketOptions {
+  workflowId?: string;
+  /** Toasts gérés par le module realtime (défaut: true). */
+  showToasts?: boolean;
+  handlers?: RealtimeHandlers;
+  /** Callback bas niveau (optionnel) — préférer handlers. */
+  onEvent?: (event: RealtimeEvent) => void;
+  enabled?: boolean;
+}
+
+/**
+ * Connexion WebSocket Manager : reconnexion auto, ping, toasts cohérents.
+ */
+export function useManagerWebSocket(options: UseManagerWebSocketOptions = {}) {
+  const {
+    workflowId,
+    showToasts = true,
+    handlers,
+    onEvent,
+    enabled = true,
+  } = options;
+
+  const handlersRef = useRef(handlers);
+  const onEventRef = useRef(onEvent);
+  handlersRef.current = handlers;
+  onEventRef.current = onEvent;
+
   useEffect(() => {
-    // Adapter l'URL à celle de ton backend WebSocket
-    // Récupérer le token d'authentification depuis le localStorage
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    let wsUrl = process.env.NEXT_PUBLIC_MANAGER_WS_URL || 'ws://localhost:8002/ws/manager/';
-    if (token) {
-      wsUrl += (wsUrl.includes('?') ? '&' : '?') + `token=${encodeURIComponent(token)}`;
-    }
-    const socket = new WebSocket(wsUrl);
+    if (!enabled || typeof window === 'undefined') return;
 
-    socket.onopen = () => {
-      console.log('[WebSocket] Connecté au manager backend');
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    const client = new ManagerRealtimeClient();
+
+    const wrapped: RealtimeHandlers = {
+      onConnected: () => handlersRef.current?.onConnected?.(),
+      onDisconnected: () => handlersRef.current?.onDisconnected?.(),
+      onWorkflowStatus: (event) => {
+        onEventRef.current?.(event);
+        handlersRef.current?.onWorkflowStatus?.(event);
+      },
+      onWorkflowUpdate: (event) => {
+        onEventRef.current?.(event);
+        handlersRef.current?.onWorkflowUpdate?.(event);
+      },
+      onTaskStatus: (event) => {
+        onEventRef.current?.(event);
+        handlersRef.current?.onTaskStatus?.(event);
+      },
+      onTaskProgress: (event) => {
+        onEventRef.current?.(event);
+        handlersRef.current?.onTaskProgress?.(event);
+      },
+      onVolunteerStatus: (event) => {
+        onEventRef.current?.(event);
+        handlersRef.current?.onVolunteerStatus?.(event);
+      },
+      onVolunteerUpdate: (event) => {
+        onEventRef.current?.(event);
+        handlersRef.current?.onVolunteerUpdate?.(event);
+      },
     };
-    socket.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        console.log('[WebSocket] Message reçu:', data);
-        onEvent(data);
-      } catch (e) {
-        console.error('[WebSocket] Erreur de parsing:', e);
-      }
-    };
-    socket.onerror = (err) => {
-      console.error('[WebSocket] Erreur:', err);
-    };
-    socket.onclose = () => {
-      console.warn('[WebSocket] Déconnecté du manager backend');
-    };
-    return () => {
-      socket.close();
-    };
-  }, [onEvent]);
+
+    client.connect({
+      token,
+      workflowId,
+      handlers: wrapped,
+      showToasts,
+    });
+
+    return () => client.disconnect();
+  }, [workflowId, showToasts, enabled]);
 }

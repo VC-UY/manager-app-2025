@@ -2,7 +2,8 @@ vir
 venv
 __pycache__
 .coordinator
-results
+# Sorties locales uniquement (ne pas ignorer la route Next.js app/.../results)
+manager_backend/**/results/
 .env
 db.sqlite3
 .manager/

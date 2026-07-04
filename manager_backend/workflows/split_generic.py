@@ -175,21 +175,29 @@ def split_ml_inference_workflow(workflow_instance, split_logger: logging.Logger)
 
 def split_custom_workflow(workflow_instance, split_logger: logging.Logger):
     """
-    Découpe un workflow CUSTOM à partir de metadata.tasks ou génère num_tasks tâches génériques.
+    Découpe un workflow CUSTOM à partir de metadata.tasks ou commande + image Docker réelles.
     """
+    from workflows.custom_validation import validate_custom_metadata
+
     metadata = workflow_instance.metadata or {}
+    ok, err, metadata = validate_custom_metadata(metadata)
+    if not ok:
+        raise ValueError(err)
+    workflow_instance.metadata = metadata
+    workflow_instance.save(update_fields=['metadata', 'updated_at'])
+
     min_resources = _get_min_resources()
     task_specs = metadata.get('tasks', [])
 
     if not task_specs:
         num_tasks = int(metadata.get('num_tasks', 1))
-        base_command = metadata.get('command', 'echo "VC-UY custom task"')
+        base_command = metadata['command']
         task_specs = [
             {'name': f'Custom task {i}', 'command': base_command}
             for i in range(num_tasks)
         ]
 
-    docker_img = metadata.get('docker_info', {'name': 'vcuy-custom', 'tag': 'latest'})
+    docker_img = metadata.get('docker_info')
     tasks = []
 
     for i, spec in enumerate(task_specs):

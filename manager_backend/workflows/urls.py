@@ -10,6 +10,7 @@ from .views import (
     download_workflow_outputs_zip,
 )
 from .submit_dispatcher import submit_workflow_dispatcher
+from .resubmit import resubmit_workflow_view
 
 router = DefaultRouter()
 router.register(r'', WorkflowViewSet, basename='workflow')
@@ -22,5 +23,6 @@ urlpatterns = [
     path('<str:workflow_id>/outputs/download/<path:file_path>', download_workflow_output, name='workflow-output-download'),
     path('<str:workflow_id>/outputs/', get_workflow_outputs, name='workflow-outputs'),
     path('<str:workflow_id>/submit/', submit_workflow_dispatcher, name='submit-workflow'),
+    path('<str:workflow_id>/resubmit/', resubmit_workflow_view, name='resubmit-workflow'),
     path('', include(router.urls)),
 ]

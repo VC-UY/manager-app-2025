@@ -399,6 +399,20 @@ export const workflowService = {
     }
   },
 
+  // Réinitialiser puis resoumettre un workflow échoué / en attente
+  resubmitWorkflow: async (id: string) => {
+    try {
+      const response = await api.post(`/workflows/${id}/resubmit/`);
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response) {
+        throw error.response.data;
+      } else {
+        throw { error: 'Une erreur est survenue lors de la resoumission du workflow' };
+      }
+    }
+  },
+
   // Récupérer les tâches d'un workflow
   getWorkflowTasks: async (id: string) => {
     try {

@@ -227,3 +227,19 @@ class WorkflowConsumer(AsyncWebsocketConsumer):
             'message': event.get('message'),
             'timestamp': event.get('timestamp')
         }))
+
+    async def task_assignment(self, event):
+        """Diffuser une assignation de tâche (normalisé en task_status_change)."""
+        await self.send(text_data=json.dumps({
+            'type': 'task_status_change',
+            'workflow_id': event.get('workflow_id'),
+            'task_id': event.get('task_id'),
+            'status': event.get('status') or 'ASSIGNED',
+            'volunteer': event.get('volunteer'),
+            'message': event.get('message') or 'Tâche assignée',
+            'timestamp': event.get('timestamp'),
+        }))
+
+    async def task_status_update(self, event):
+        """Alias pour compatibilité avec d'anciens émetteurs."""
+        await self.task_status_change(event)

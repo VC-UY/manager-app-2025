@@ -46,10 +46,9 @@ export default function EditWorkflowPage() {
         const data = await workflowService.getWorkflow(id as string);
         setOriginalData(data);
         
-        // Vérifier si le workflow est modifiable
-        const nonEditableStates = ['SUBMITTED', 'RUNNING', 'COMPLETED', 'FAILED'];
-        const isEditable = !nonEditableStates.includes(data.status);
-        setCanEdit(isEditable);
+        // Modifiable avant exécution active, ou après échec (pour resoumission)
+        const editableStates = ['CREATED', 'VALIDATED', 'FAILED', 'PARTIAL_FAILURE', 'ERROR', 'PENDING'];
+        setCanEdit(editableStates.includes(data.status));
         
         // Initialiser le formulaire avec les données existantes
         setFormData({

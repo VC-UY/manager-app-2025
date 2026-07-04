@@ -103,9 +103,43 @@ def heartbeat_handler(channel: str, message: Message):
         channel: Canal sur lequel le message a été reçu
         message: Message reçu
     """
-    sender_type = message.sender.get('type', 'unknown')
-    sender_id = message.sender.get('id', 'unknown')
+    sender_type = message.sender.get('type', 'unknown') if isinstance(message.sender, dict) else 'unknown'
+    sender_id = message.sender.get('id', 'unknown') if isinstance(message.sender, dict) else 'unknown'
+    data = message.data or {}
+    volunteer_id = data.get('volunteer_id') or (
+        sender_id if sender_type == 'volunteer' else None
+    )
+    if volunteer_id:
+        try:
+            from volunteers.presence import mark_online
+            mark_online(
+                str(volunteer_id),
+                name=data.get('username') or data.get('name'),
+                resources=data.get('resources') or {},
+                status=data.get('status') or 'available',
+            )
+        except Exception as exc:
+            logger.warning("Heartbeat volontaire ignore: %s", exc)
     logger.debug(f"Heartbeat reçu de {sender_type}:{sender_id}")
+
+
+def volunteer_heartbeat_handler(channel: str, message: Message):
+    """Canal dédié volunteer/heartbeat."""
+    heartbeat_handler(channel, message)
+
+
+def volunteer_disconnect_handler(channel: str, message: Message):
+    """Volontaire déconnecté explicitement."""
+    data = message.data or {}
+    volunteer_id = data.get('volunteer_id')
+    if not volunteer_id and isinstance(message.sender, dict):
+        volunteer_id = message.sender.get('id')
+    if volunteer_id:
+        try:
+            from volunteers.presence import mark_offline
+            mark_offline(str(volunteer_id), reason="disconnect")
+        except Exception as exc:
+            logger.warning("Disconnect volontaire ignore: %s", exc)
 
 def error_handler(channel: str, message: Message):
     """
@@ -651,8 +685,10 @@ def handle_task_files_ready(channel: str, message: Message):
 
 # Dictionnaire des gestionnaires par défaut
 DEFAULT_HANDLERS = {
-    # Canaux génériques
+    # Canaux génériques / présence volontaires
     "coord/heartbeat": heartbeat_handler,
+    "volunteer/heartbeat": volunteer_heartbeat_handler,
+    "volunteer/disconnect": volunteer_disconnect_handler,
     "coord/emergency": error_handler,
     "system/error": error_handler,
 

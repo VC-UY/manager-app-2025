@@ -16,7 +16,8 @@ class Volunteer(models.Model):
     available = models.BooleanField(default=True)
     status = models.CharField(max_length=20, default="available")  # Ex: "available", "busy", "offline"
     ip_address = models.GenericIPAddressField(null=True, blank=True)
-    last_seen = models.DateTimeField(auto_now=True)
+    # Mis à jour uniquement par heartbeat / login (pas auto_now)
+    last_seen = models.DateTimeField(default=timezone.now, null=True, blank=True)
     disk_gb = models.IntegerField()
     tags = models.JSONField(default=list, blank=True)  # Ex: ["arm64", "nvidia", "raspberry", "gpu"]
     meta_info = models.JSONField(default=dict, blank=True)  

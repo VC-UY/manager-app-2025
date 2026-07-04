@@ -222,121 +222,36 @@ def process_openmalaria_submission(workflow_id, request=None):
                     'message': f'Découpage terminé, {len(tasks)} tâches créées'
                 })
                 
-                # Assigner les tâches
+                # Assigner les tâches (ou attendre un volontaire — jamais d'echec pour ca)
                 volunteers = response.get('volunteers') if isinstance(response, dict) else None
-                
-                if volunteers:
-                    thread_logger.info(f"Volontaires disponibles: {len(volunteers)}")
-                    workflow.status = WorkflowStatus.ASSIGNING
-                    workflow.save()
-                    
-                    notify_event('workflow_status_change', {
-                        'workflow_id': str(workflow_id),
-                        'status': 'ASSIGNING',
-                        'message': 'Attribution des tâches aux volontaires...'
-                    })
-                    
-                    from tasks.scheduller import assign_workflow_to_volunteers
-                    
-                    assignment_result = assign_workflow_to_volunteers(workflow, volunteers)
-                    thread_logger.info(f"Résultat de l'assignation: {assignment_result}")
-                    
-                    redis_client = RedisClient.get_instance()
-                    
-                    notify_event('workflow_status_change', {
-                        'workflow_id': str(workflow_id),
-                        'status': 'ASSIGNED',
-                        'message': 'Tâches attribuées avec succès'
-                    })
-                    
-                    # Écoute des canaux
+                from tasks.assignment import assign_and_publish
+
+                assign_result = assign_and_publish(workflow, volunteers, server_port)
+                thread_logger.info("Assignation: %s", assign_result)
+                workflow.refresh_from_db()
+
+                # Ecoute des retours de taches (best-effort)
+                try:
                     from tasks.handlers import (
                         listen_for_task_accept,
                         listen_for_task_complete,
                         listen_for_task_status,
-                        listen_task_progress
+                        listen_task_progress,
                     )
-                    
-                    accept_success = listen_for_task_accept()
-                    complete_success = listen_for_task_complete()
-                    status_success = listen_for_task_status()
-                    progress_success = listen_task_progress()
-                    
-                    if accept_success and complete_success and status_success and progress_success:
-                        thread_logger.info("Souscription aux canaux réussie")
-                    else:
-                        thread_logger.warning("Problème lors de la souscription aux canaux")
-                    
-                    # Publier les assignations enrichies
-                    from redis_communication.utils import get_manager_login_token
-                    
-                    server_ip = get_local_ip()
-                    
-                    for volunteer_id, task_list in assignment_result.items():
-                        enriched_tasks = []
-                        
-                        for task_info in task_list:
-                            try:
-                                task_id = task_info['task_id']
-                                task = Task.objects.get(id=task_id)
-                                
-                                from redis_communication.utils import build_task_file_transfer_info
-                                transfer = build_task_file_transfer_info(workflow, task, server_port)
-                                enriched_task = {
-                                    'task_id': task_id,
-                                    'name': task.name,
-                                    'description': task.description,
-                                    'command': task.command,
-                                    'dependencies': task.dependencies,
-                                    'is_subtask': task.is_subtask,
-                                    'status': task.status,
-                                    'required_resources': task.required_resources,
-                                    'attempts': task.attempts,
-                                    'workflow_id': str(workflow.id),
-                                    'parameters': task.parameters,
-                                    'estimated_execution_time': task.estimated_max_time,
-                                    'input_data': transfer,
-                                    'input_data_size': task.input_size,
-                                    'docker_information': task.docker_info or {}
-                                }
-                                enriched_tasks.append(enriched_task)
-                                
-                            except Task.DoesNotExist:
-                                thread_logger.error(f"Tâche {task_id} introuvable")
-                            except Exception as e:
-                                thread_logger.error(f"Erreur lors de l'enrichissement de la tâche {task_id}: {e}")
-                        
-                        # Publier les assignations pour chaque volontaire
-                        if enriched_tasks:
-                            try:
-                                redis_client.publish('task/assignment', {
-                                    'workflow_id': str(workflow_id),
-                                    'assignments': {
-                                        volunteer_id: enriched_tasks
-                                    },
-                                }, str(uuid.uuid4()), get_manager_login_token(), 'request')
-                                thread_logger.info(f"Assignations publiées pour le volontaire {volunteer_id}")
-                            except Exception as e:
-                                thread_logger.error(f"Erreur lors de la publication pour {volunteer_id}: {e}")
-                
-                else:
-                    thread_logger.info("Aucun volontaire reçu, écoute sur le canal d'assignment")
-                    pubsub = RedisClient.get_instance()
-                    pubsub.subscribe('workflow/assignment')
-                    
-                    notify_event('workflow_status_change', {
-                        'workflow_id': str(workflow_id),
-                        'status': 'WAITING_VOLUNTEERS',
-                        'message': 'En attente de volontaires disponibles...'
-                    })
-                    
-                    from workflows.handlers import listen_for_volunteers
-                    listen_for_volunteers(workflow_id)
-                
+                    listen_for_task_accept()
+                    listen_for_task_complete()
+                    listen_for_task_status()
+                    listen_task_progress()
+                except Exception as listen_err:
+                    thread_logger.warning("Ecoute taches partielle: %s", listen_err)
+
                 notify_event('workflow_status_change', {
                     'workflow_id': str(workflow_id),
                     'status': workflow.status,
-                    'message': 'Processus de soumission terminé'
+                    'message': assign_result.get(
+                        'message',
+                        'Soumission terminee',
+                    ),
                 })
                 
                 thread_logger.info(f"===== Fin du traitement asynchrone du workflow {workflow_id} =====")
@@ -344,18 +259,31 @@ def process_openmalaria_submission(workflow_id, request=None):
             except Exception as e:
                 thread_logger.error(f"ERREUR lors du traitement: {e}")
                 thread_logger.error(traceback.format_exc())
-                
+
+                # Si les taches existent deja, on attend un volontaire au lieu d'echouer
                 try:
-                    workflow.status = WorkflowStatus.FAILED
-                    workflow.save()
+                    workflow.refresh_from_db()
+                    if workflow.tasks.exists():
+                        workflow.status = WorkflowStatus.PENDING
+                        workflow.save(update_fields=['status', 'updated_at'])
+                        notify_event('workflow_status_change', {
+                            'workflow_id': str(workflow_id),
+                            'status': 'PENDING',
+                            'message': (
+                                'Soumission OK. Taches creees, en attente de volontaires '
+                                f'(detail: {e})'
+                            ),
+                        })
+                    else:
+                        workflow.status = WorkflowStatus.FAILED
+                        workflow.save(update_fields=['status', 'updated_at'])
+                        notify_event('workflow_status_change', {
+                            'workflow_id': str(workflow_id),
+                            'status': 'FAILED',
+                            'message': f'Erreur lors du traitement: {str(e)}',
+                        })
                 except Exception as save_error:
-                    thread_logger.error(f"Impossible de sauvegarder le statut d'échec: {save_error}")
-                
-                notify_event('workflow_status_change', {
-                    'workflow_id': str(workflow_id),
-                    'status': 'ERROR',
-                    'message': f'Erreur lors du traitement: {str(e)}'
-                })
+                    thread_logger.error(f"Impossible de sauvegarder le statut: {save_error}")
                 
                 thread_logger.error("===== Fin du traitement avec ERREUR =====")
         
