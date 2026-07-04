@@ -38,8 +38,8 @@ def process_openmalaria_submission(workflow_id, request=None):
 
         # Étude globale partitionnée (valeurs par défaut = charge réaliste)
         metadata = workflow.metadata or {}
-        num_tasks = int(metadata.get('num_tasks', 4))
-        total_population = int(metadata.get('total_population', 80000))
+        num_tasks = int(metadata.get('num_tasks', 8))
+        total_population = int(metadata.get('total_population', 160000))
         population_per_task = int(
             metadata.get('population_per_task', max(1, total_population // num_tasks))
         )

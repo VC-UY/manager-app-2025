@@ -1255,9 +1255,9 @@ def split_ml_training_workflow(workflow_instance: Workflow, logger: logging.Logg
     min_resources = get_min_volunteer_resources()
 
     metadata = workflow_instance.metadata or {}
-    # Charge réaliste par défaut (défendable scientifiquement)
-    num_shards = int(metadata.get("num_tasks") or 4)
-    samples_per_shard = int(metadata.get("samples_per_shard") or 8000)
+    # Charge réaliste: au moins 7–8 partitions
+    num_shards = max(7, int(metadata.get("num_tasks") or 8))
+    samples_per_shard = int(metadata.get("samples_per_shard") or 6000)
     epochs = int(metadata.get("epochs") or 25)
     use_synthetic = metadata.get("synthetic", True)
 
@@ -1364,7 +1364,7 @@ def split_openmalaria_workflow(
     4. Le Manager agrège les sorties en indicateurs globaux pondérés
     """
     metadata = workflow_instance.metadata or {}
-    num_tasks = max(2, int(num_tasks or metadata.get("num_tasks") or 4))
+    num_tasks = max(7, int(num_tasks or metadata.get("num_tasks") or 8))
     total_population = int(
         metadata.get("total_population")
         or (num_tasks * int(population_per_task or 20000))

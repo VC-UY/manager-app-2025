@@ -56,11 +56,25 @@ def assign_workflow_to_volunteers(
     if not volunteer_objs:
         return {}
 
+    from volunteers.matching import volunteer_can_run_task
+
     assignments: Dict[str, List[Dict[str, str]]] = defaultdict(list)
     assignable = get_assignable_tasks(workflow)
+    # Index tournant par volontaire éligible
+    rr_index = 0
 
-    for index, task in enumerate(assignable):
-        volunteer_id, volunteer = volunteer_objs[index % len(volunteer_objs)]
+    for task in assignable:
+        eligible = [
+            (vid, vol) for vid, vol in volunteer_objs if volunteer_can_run_task(vol, task)
+        ]
+        if not eligible:
+            logger.info(
+                "Aucun volontaire compatible (préférences/ressources) pour la tâche %s",
+                task.id,
+            )
+            continue
+        volunteer_id, volunteer = eligible[rr_index % len(eligible)]
+        rr_index += 1
         VolunteerTask.objects.update_or_create(
             volunteer=volunteer,
             task=task,
@@ -71,8 +85,13 @@ def assign_workflow_to_volunteers(
         )
         task.status = TaskStatus.ASSIGNED
         task.save(update_fields=["status"])
+        # Inclure workflow_type pour filtrage côté volontaire
         assignments[volunteer_id].append(
-            {"task_id": str(task.id), "task_name": task.name}
+            {
+                "task_id": str(task.id),
+                "task_name": task.name,
+                "workflow_type": getattr(workflow, "workflow_type", ""),
+            }
         )
 
     # Inclure aussi les taches deja ASSIGNED non terminees (republication)
@@ -146,6 +165,7 @@ def publish_assignments(
                     "required_resources": task.required_resources,
                     "attempts": task.attempts,
                     "workflow_id": str(workflow.id),
+                    "workflow_type": getattr(workflow, "workflow_type", ""),
                     "parameters": task.parameters,
                     "estimated_execution_time": task.estimated_max_time,
                     "input_data": transfer,

@@ -117,6 +117,7 @@ def heartbeat_handler(channel: str, message: Message):
                 name=data.get('username') or data.get('name'),
                 resources=data.get('resources') or {},
                 status=data.get('status') or 'available',
+                preferences=data.get('preferences') or None,
             )
         except Exception as exc:
             logger.warning("Heartbeat volontaire ignore: %s", exc)

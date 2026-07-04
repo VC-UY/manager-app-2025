@@ -34,7 +34,7 @@ export default function CreateWorkflowPage() {
     // CUSTOM uniquement — obligatoires pour un vrai workflow
     custom_command: '',
     custom_docker_image: '',
-    custom_num_tasks: 1,
+    custom_num_tasks: 8,
   });
 
   const [loading, setLoading] = useState(false);
@@ -471,7 +471,7 @@ export default function CreateWorkflowPage() {
                       id="custom_num_tasks"
                       name="custom_num_tasks"
                       type="number"
-                      min={1}
+                      min={7}
                       max={64}
                       value={formData.custom_num_tasks}
                       onChange={handleChange}

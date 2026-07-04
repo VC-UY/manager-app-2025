@@ -116,11 +116,11 @@ def validate_custom_metadata(metadata: Dict[str, Any] | None) -> Tuple[bool, str
     meta["docker_info"] = docker
 
     try:
-        num_tasks = int(meta.get("num_tasks") or 1)
+        num_tasks = int(meta.get("num_tasks") or 8)
     except (TypeError, ValueError):
-        num_tasks = 1
-    if num_tasks < 1 or num_tasks > 64:
-        return False, "num_tasks doit être entre 1 et 64.", meta
+        num_tasks = 8
+    if num_tasks < 7 or num_tasks > 64:
+        return False, "num_tasks doit être entre 7 et 64 pour un workflow personnalisé.", meta
     meta["num_tasks"] = num_tasks
     meta["command"] = command
 

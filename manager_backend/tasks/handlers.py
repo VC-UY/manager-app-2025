@@ -460,6 +460,27 @@ def handle_task_status(channel: str, message: Message):
         
         elif status.lower() == 'error' or status.lower() == 'failed':
 
+            error_type = data.get('error_type', 'unknown')
+            error_message = data.get('error_message', '')
+
+            # Refus pour préférences: remettre en CREATED sans compter comme échec
+            if str(error_type).lower() == 'preference_mismatch':
+                from volunteers.models import VolunteerTask as VT
+                VT.objects.filter(task=task, volunteer=volunteer).update(status='EXPIRED')
+                task.status = TaskStatus.CREATED
+                task.save(update_fields=['status'])
+                from websocket_service.client import notify_event
+                notify_event('task_status_change', {
+                    'workflow_id': str(workflow.id),
+                    'task_id': str(task.id),
+                    'status': TaskStatus.CREATED,
+                    'volunteer': volunteer.name,
+                    'message': f"Tâche refusée (préférences): {error_message}",
+                })
+                from tasks.recovery import recover_pending_and_failed_work
+                recover_pending_and_failed_work()
+                return True
+
             # Notifier le changement de statut via WebSocket
             from websocket_service.client import notify_event
             notify_event('task_status_change', {
@@ -473,10 +494,6 @@ def handle_task_status(channel: str, message: Message):
             # La tâche a échoué
             task.status = TaskStatus.FAILED
             task.end_time = timezone.now()
-            
-            # Vérifier le type d'erreur
-            error_type = data.get('error_type', 'unknown')
-            error_message = data.get('error_message', '')
 
             task.error_details = {
                 'error_type': error_type,

@@ -27,6 +27,7 @@ def mark_online(
     name: Optional[str] = None,
     resources: Optional[Dict[str, Any]] = None,
     status: str = "available",
+    preferences: Optional[Dict[str, Any]] = None,
 ) -> None:
     from volunteers.models import Volunteer
 
@@ -34,6 +35,11 @@ def mark_online(
         return
 
     resources = resources or {}
+    # Si hors plage horaire, le volontaire signale offline
+    if status == "offline":
+        mark_offline(coordinator_volunteer_id, reason="schedule")
+        return
+
     defaults = {
         "status": status if status in ("available", "busy") else "available",
         "available": True,
@@ -46,7 +52,7 @@ def mark_online(
     if resources.get("memory_mb") is not None:
         defaults["ram_mb"] = int(resources.get("memory_mb") or 1024)
     if resources.get("disk_space_mb") is not None:
-        defaults["disk_gb"] = int(resources.get("disk_space_mb") or 10240) // 1024
+        defaults["disk_gb"] = max(1, int(resources.get("disk_space_mb") or 1024) // 1024)
     if "gpu" in resources:
         defaults["gpu"] = bool(resources.get("gpu"))
     if resources.get("ip_address"):
@@ -59,12 +65,21 @@ def mark_online(
     defaults.setdefault("ram_mb", 1024)
     defaults.setdefault("disk_gb", 10)
 
-    previous_status = None
     existing = Volunteer.objects.filter(
         coordinator_volunteer_id=str(coordinator_volunteer_id)
     ).first()
-    if existing:
-        previous_status = existing.status
+    previous_status = existing.status if existing else None
+    meta = dict((existing.meta_info if existing else None) or {})
+    if preferences:
+        meta["preferences"] = preferences
+        # Aligner ressources offertes sur les préférences
+        if preferences.get("max_cpu_cores"):
+            defaults["cpu_cores"] = int(preferences["max_cpu_cores"])
+        if preferences.get("max_ram_gb"):
+            defaults["ram_mb"] = int(preferences["max_ram_gb"]) * 1024
+        if preferences.get("max_disk_gb"):
+            defaults["disk_gb"] = int(preferences["max_disk_gb"])
+    defaults["meta_info"] = meta
 
     volunteer, created = Volunteer.objects.update_or_create(
         coordinator_volunteer_id=str(coordinator_volunteer_id),
