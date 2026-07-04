@@ -55,11 +55,19 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         # Parametres de demo pour ML / OpenMalaria ; CUSTOM exige une vraie config
         metadata = workflow.metadata or {}
         if workflow.workflow_type == 'ML_TRAINING':
-            metadata.setdefault('num_tasks', 2)
-            metadata.setdefault('samples_per_shard', 512)
+            # Partitionnement d'un jeu global + entraînement local conséquent
+            metadata.setdefault('num_tasks', 4)
+            metadata.setdefault('samples_per_shard', 8000)
+            metadata.setdefault('epochs', 25)
+            metadata.setdefault('paradigm', 'partition_train_aggregate')
         if workflow.workflow_type == 'OPEN_MALARIA':
-            metadata.setdefault('num_tasks', 2)
-            metadata.setdefault('population_per_task', 500)
+            # Étude globale partitionnée (charge CPU significative)
+            metadata.setdefault('num_tasks', 4)
+            metadata.setdefault('total_population', 80000)
+            metadata.setdefault('population_per_task', 20000)
+            metadata.setdefault('simulation_days', 3650)
+            metadata.setdefault('monte_carlo_runs', 12)
+            metadata.setdefault('paradigm', 'partition_simulate_aggregate')
         if workflow.workflow_type == 'CUSTOM':
             from rest_framework.exceptions import ValidationError
             from workflows.custom_validation import validate_custom_metadata

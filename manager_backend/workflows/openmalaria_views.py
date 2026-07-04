@@ -36,20 +36,32 @@ def process_openmalaria_submission(workflow_id, request=None):
                 'error': 'Le workflow doit être de type OPEN_MALARIA'
             }, status=400)
 
-        # Parametres de demo (petits pour un test propre et rapide)
+        # Étude globale partitionnée (valeurs par défaut = charge réaliste)
         metadata = workflow.metadata or {}
-        num_tasks = int(metadata.get('num_tasks', 2))
-        population_per_task = int(metadata.get('population_per_task', 500))
+        num_tasks = int(metadata.get('num_tasks', 4))
+        total_population = int(metadata.get('total_population', 80000))
+        population_per_task = int(
+            metadata.get('population_per_task', max(1, total_population // num_tasks))
+        )
         if request is not None and hasattr(request, 'data'):
             if request.data.get('num_tasks') is not None:
                 num_tasks = int(request.data.get('num_tasks'))
+            if request.data.get('total_population') is not None:
+                total_population = int(request.data.get('total_population'))
             if request.data.get('population_per_task') is not None:
                 population_per_task = int(request.data.get('population_per_task'))
+            if request.data.get('simulation_days') is not None:
+                metadata['simulation_days'] = int(request.data.get('simulation_days'))
+            if request.data.get('monte_carlo_runs') is not None:
+                metadata['monte_carlo_runs'] = int(request.data.get('monte_carlo_runs'))
 
-        if num_tasks < 1 or population_per_task < 1:
+        if num_tasks < 1 or population_per_task < 1 or total_population < 1:
             return JsonResponse({
-                'error': 'num_tasks et population_per_task doivent être positifs'
+                'error': 'num_tasks, total_population et population_per_task doivent être positifs'
             }, status=400)
+        # Cohérence: population totale = somme des partitions
+        if metadata.get('total_population') is None:
+            total_population = num_tasks * population_per_task
 
         # Chemins de travail persistants
         data_root = '/data' if os.path.isdir('/data') else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -65,7 +77,11 @@ def process_openmalaria_submission(workflow_id, request=None):
         os.makedirs(workflow.input_path, exist_ok=True)
         os.makedirs(workflow.output_path, exist_ok=True)
         metadata['num_tasks'] = num_tasks
+        metadata['total_population'] = total_population
         metadata['population_per_task'] = population_per_task
+        metadata.setdefault('simulation_days', 3650)
+        metadata.setdefault('monte_carlo_runs', 12)
+        metadata['paradigm'] = 'partition_simulate_aggregate'
         workflow.metadata = metadata
         workflow.save()
         

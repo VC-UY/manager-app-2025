@@ -71,7 +71,23 @@ def main():
     loss_fn = nn.CrossEntropyLoss()
     opt = torch.optim.Adam(model.parameters(), lr=1e-3)
 
-    epochs = int(os.environ.get("TRAIN_EPOCHS", "2"))
+    # Epochs depuis partition.json (étude globale) ou variable d'environnement
+    partition = {}
+    for candidate in [
+        data_file.parent / "partition.json",
+        Path("/input/partition.json"),
+        Path("partition.json"),
+    ]:
+        if candidate.exists():
+            with open(candidate, "r", encoding="utf-8") as handle:
+                partition = json.load(handle)
+            break
+
+    epochs = int(os.environ.get("TRAIN_EPOCHS") or partition.get("epochs") or 25)
+    partition_index = partition.get("partition_index")
+    global_offset = partition.get("global_offset")
+    study_id = partition.get("study_id")
+
     model.train()
     for _ in range(epochs):
         for batch_x, batch_y in loader:
@@ -92,12 +108,19 @@ def main():
     with open(model_path, "wb") as handle:
         pickle.dump({"format": "numpy_state_dict", "weights": weights}, handle)
     metrics_path.write_text(json.dumps({
+        "study_id": study_id,
+        "partition_index": partition_index,
+        "global_offset": global_offset,
         "accuracy": accuracy,
         "samples": int(data.shape[0]),
         "classes": num_classes,
         "epochs": epochs,
+        "paradigm": "partition_train_aggregate",
     }))
-    print(f"OK train samples={data.shape[0]} acc={accuracy:.4f} -> {model_path}")
+    print(
+        f"OK train partition={partition_index} samples={data.shape[0]} "
+        f"epochs={epochs} acc={accuracy:.4f} -> {model_path}"
+    )
 
 
 if __name__ == "__main__":

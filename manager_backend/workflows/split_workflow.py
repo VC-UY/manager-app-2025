@@ -4,6 +4,7 @@ import uuid
 
 from workflows.models import WorkflowType, Workflow
 
+import json
 import os
 import pickle
 from tasks.models import Task, TaskStatus
@@ -87,21 +88,21 @@ def download_cifar100_if_needed(dataset_path):
     with tarfile.open(archive_path, "r:gz") as tar:
         tar.extractall(path=dataset_path)
 
-def generate_openmalaria_scenario(population_size, output_dir, shard_id):
+def generate_openmalaria_scenario(
+    population_size,
+    output_dir,
+    shard_id,
+    study_name="GlobalMalariaStudy",
+    seed=0,
+):
     """
-    Génère un fichier de scénario XML pour OpenMalaria avec une population donnée.
-    
-    Args:
-        population_size (int): Taille de la population pour la simulation.
-        output_dir (str): Répertoire où sauvegarder le fichier scénario.
-        shard_id (int): Identifiant du shard pour nommer le fichier.
-    
-    Returns:
-        str: Chemin du fichier scénario généré.
+    Génère le scénario XML d'une PARTITION d'une étude globale.
+
+    Tous les shards partagent la même étude (paramètres épidémiologiques identiques).
+    Seuls popSize et iseed varient — c'est le partitionnement d'une population globale.
     """
-    # Modèle de scénario XML de base (simplifié, à adapter selon vos besoins)
     scenario_template = """<?xml version='1.0' encoding='UTF-8'?>
-<om:scenario xmlns:om="http://openmalaria.org/schema/scenario_47" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" analysisNo="49" name="Idete Incidence{shard_id}" schemaVersion="47" wuID="536305339" xsi:schemaLocation="http://openmalaria.org/schema/scenario_47 scenario_current.xsd">
+<om:scenario xmlns:om="http://openmalaria.org/schema/scenario_47" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" analysisNo="49" name="{study_name}_partition_{shard_id}" schemaVersion="47" wuID="536305339" xsi:schemaLocation="http://openmalaria.org/schema/scenario_47 scenario_current.xsd">
   <demography name="Ifakara" maximumAgeYrs="100" popSize="{population_size}">
     <ageGroup lowerbound="0.0">
       <group poppercent="3.474714994" upperbound="1"/>
@@ -1109,7 +1110,7 @@ def generate_openmalaria_scenario(population_size, output_dir, shard_id):
         <group lowerbound="20.0" value="1.0"/>
       </availabilityToMosquitoes>
     </human>
-    <parameters interval="5" iseed="0" latentp="3">
+    <parameters interval="5" iseed="{seed}" latentp="3">
       <parameter name="         '-ln(1-Sinf)'    " number="1" value="0.050736"/>
       <parameter name="         Estar    " number="2" value="0.03247"/>
       <parameter name="         Simm     " number="3" value="0.157325"/>
@@ -1146,65 +1147,136 @@ def generate_openmalaria_scenario(population_size, output_dir, shard_id):
   </model>
 </om:scenario>
 """
-    scenario_content = scenario_template.format(shard_id=shard_id, population_size=population_size)
-    
+    scenario_content = scenario_template.format(
+        shard_id=shard_id,
+        population_size=population_size,
+        study_name=study_name,
+        seed=int(seed),
+    )
+
     os.makedirs(output_dir, exist_ok=True)
-    scenario_path = os.path.join(output_dir, f"scenario.xml")
-    
-    with open(scenario_path, "w") as f:
+    scenario_path = os.path.join(output_dir, "scenario.xml")
+
+    with open(scenario_path, "w", encoding="utf-8") as f:
         f.write(scenario_content)
-    
-    logger.info(f"Scénario généré pour shard {shard_id} à {scenario_path}")
+
+    logger.info("Partition %s: scénario écrit dans %s (pop=%s)", shard_id, scenario_path, population_size)
     return scenario_path
 
-def _write_synthetic_ml_shards(input_dir, num_shards, samples_per_shard, logger):
-    """Genere des shards CIFAR-like sans telecharger le dataset (demo rapide).
+def _write_partitioned_ml_dataset(input_dir, num_shards, samples_per_shard, epochs, logger):
+    """
+    Construit UN jeu de données global, puis le partitionne en shards contigus.
 
-    Utilise des listes Python pures (pas numpy) pour etre lisible dans le
-    conteneur worker qui n'embarque pas numpy.
+    Manifeste global: inputs/global_dataset_manifest.json
+    Chaque shard: data.pkl + partition.json (offset global, taille, epochs)
     """
     import random
 
     os.makedirs(input_dir, exist_ok=True)
-    samples_per_shard = max(32, int(samples_per_shard))
+    samples_per_shard = max(1000, int(samples_per_shard))
+    total_samples = num_shards * samples_per_shard
+    study_id = f"ml-study-{total_samples}"
+
+    manifest = {
+        "study_id": study_id,
+        "paradigm": "partition_train_aggregate",
+        "description": (
+            "Jeu de données global partitionné en shards disjoints. "
+            "Chaque volontaire entraîne un modèle local; le Manager agrège "
+            "les poids (moyenne fédérée) pour reconstruire le modèle global."
+        ),
+        "total_samples": total_samples,
+        "num_partitions": num_shards,
+        "samples_per_partition": samples_per_shard,
+        "epochs": epochs,
+        "num_classes": 100,
+        "input_shape": [32, 32, 3],
+        "partitions": [],
+    }
+
+    rng = random.Random(42)
     for i in range(num_shards):
+        offset = i * samples_per_shard
         shard_dir = os.path.join(input_dir, f"shard_{i}")
         os.makedirs(shard_dir, exist_ok=True)
+        # Données déterministes par index global (partition réelle d'un corpus unique)
         data = [
-            [[[(s * 3 + c) % 256 for c in range(3)] for _ in range(32)] for _ in range(32)]
+            [
+                [[((offset + s) * 3 + c + r + col) % 256 for c in range(3)] for col in range(32)]
+                for r in range(32)
+            ]
             for s in range(samples_per_shard)
         ]
-        labels = [random.randint(0, 99) for _ in range(samples_per_shard)]
+        labels = [((offset + s) * 7 + rng.randint(0, 3)) % 100 for s in range(samples_per_shard)]
         with open(os.path.join(shard_dir, "data.pkl"), "wb") as handle:
             pickle.dump((data, labels), handle)
+
+        partition = {
+            "study_id": study_id,
+            "partition_index": i,
+            "global_offset": offset,
+            "num_samples": samples_per_shard,
+            "total_samples": total_samples,
+            "epochs": epochs,
+            "num_classes": 100,
+        }
+        with open(os.path.join(shard_dir, "partition.json"), "w", encoding="utf-8") as handle:
+            json.dump(partition, handle, indent=2)
+
+        manifest["partitions"].append(
+            {
+                "partition_index": i,
+                "global_offset": offset,
+                "num_samples": samples_per_shard,
+                "path": f"shard_{i}",
+            }
+        )
         if logger:
-            logger.warning("Shard synthetique %s: %s samples", i, samples_per_shard)
+            logger.warning(
+                "Partition ML %s/%s: offset=%s samples=%s",
+                i + 1,
+                num_shards,
+                offset,
+                samples_per_shard,
+            )
+
+    with open(os.path.join(input_dir, "global_dataset_manifest.json"), "w", encoding="utf-8") as handle:
+        json.dump(manifest, handle, indent=2)
+    return manifest
 
 
-def split_ml_training_workflow(workflow_instance: Workflow, logger:logging.Logger):
+def split_ml_training_workflow(workflow_instance: Workflow, logger: logging.Logger):
     """
-    Effectue le découpage pour un workflow ML_TRAINING à partir du script externe.
+    Partitionne un jeu de données global puis crée une tâche d'entraînement par partition.
+    Agrégation ultérieure = fusion des modèles locaux (federated averaging).
     """
     dataset_path = os.path.join(workflow_instance.executable_path, "data")
     input_dir = os.path.join(workflow_instance.executable_path, "inputs")
-
-    # Étape 1: déterminer ressources min
     min_resources = get_min_volunteer_resources()
 
-    # Pour une demo propre: 2 a 4 shards max
     metadata = workflow_instance.metadata or {}
-    num_shards = int(metadata.get("num_tasks") or 2)
-    samples_per_shard = int(metadata.get("samples_per_shard", 512))
+    # Charge réaliste par défaut (défendable scientifiquement)
+    num_shards = int(metadata.get("num_tasks") or 4)
+    samples_per_shard = int(metadata.get("samples_per_shard") or 8000)
+    epochs = int(metadata.get("epochs") or 25)
+    use_synthetic = metadata.get("synthetic", True)
+
     os.makedirs(input_dir, exist_ok=True)
 
-    # Preferer des shards synthetiques (rapide, pas de dependance reseau)
-    use_synthetic = metadata.get("synthetic", True)
     if use_synthetic:
-        logger.warning("Generation de shards ML synthetiques (demo)")
-        _write_synthetic_ml_shards(input_dir, num_shards, samples_per_shard, logger)
+        logger.warning(
+            "Partitionnement ML global: %s partitions × %s samples, %s epochs",
+            num_shards,
+            samples_per_shard,
+            epochs,
+        )
+        manifest = _write_partitioned_ml_dataset(
+            input_dir, num_shards, samples_per_shard, epochs, logger
+        )
     else:
         download_cifar100_if_needed(dataset_path)
         from workflows.examples.cifar100_training.split_dataset import split_dataset
+
         split_dataset(
             num_shards,
             path=input_dir,
@@ -1212,10 +1284,28 @@ def split_ml_training_workflow(workflow_instance: Workflow, logger:logging.Logge
             logger=logger,
             samples_per_shard=samples_per_shard,
         )
-    logger.warning(f"Decouppage en {num_shards} shards Ok.")
-    logger.warning("Creation de taches.")
+        manifest = {
+            "study_id": f"cifar100-{num_shards}",
+            "paradigm": "partition_train_aggregate",
+            "total_samples": num_shards * samples_per_shard,
+            "num_partitions": num_shards,
+            "epochs": epochs,
+        }
+        with open(os.path.join(input_dir, "global_dataset_manifest.json"), "w", encoding="utf-8") as handle:
+            json.dump(manifest, handle, indent=2)
 
-    # Image Docker d'entrainement (a builder sur chaque volontaire)
+    metadata.update(
+        {
+            "num_tasks": num_shards,
+            "samples_per_shard": samples_per_shard,
+            "epochs": epochs,
+            "total_samples": manifest.get("total_samples"),
+            "paradigm": "partition_train_aggregate",
+        }
+    )
+    workflow_instance.metadata = metadata
+    workflow_instance.save(update_fields=["metadata", "updated_at"])
+
     docker_img = {
         "name": "vcuy-ml-train",
         "tag": "latest",
@@ -1223,84 +1313,19 @@ def split_ml_training_workflow(workflow_instance: Workflow, logger:logging.Logge
     }
     tasks = []
     for i in range(num_shards):
-        input_size = max(1, os.path.getsize(os.path.join(input_dir, f"shard_{i}/data.pkl")) // (1024 * 1024))
-
+        data_path = os.path.join(input_dir, f"shard_{i}/data.pkl")
+        input_size = max(1, os.path.getsize(data_path) // (1024 * 1024))
         task = Task.objects.create(
             workflow=workflow_instance,
-            name=f"Train Shard {i}",
-            description=f"Training on shard {i}",
+            name=f"Train Partition {i}",
+            description=(
+                f"Entraînement local sur partition {i}/{num_shards} "
+                f"du jeu global ({samples_per_shard} samples, {epochs} epochs)"
+            ),
             command="python train_on_shard.py",
             parameters=[],
-            input_files=[f"shard_{i}/data.pkl"],
-            output_files=[f"model.pt", f"metrics.json"],
-            status= TaskStatus.CREATED,
-            parent_task=None,
-            is_subtask=False,
-            progress=0,
-            start_time=None,
-            docker_info=docker_img,
-            required_resources={
-                "cpu": min_resources["min_cpu"],
-                "ram": min_resources["min_ram"],
-                "disk": min_resources["disk"],
-            },
-            estimated_max_time=300,
-        )
-        task.input_size = input_size
-        task.save()
-        tasks.append(task)
-        logger.warning(f"Tache {i}: {task} créée avec succès")
-    
-    # Étape 5: sauvegarder les tâches dans le workflow
-    workflow_instance.tasks.add(*tasks)
-    workflow_instance.save()
-    return tasks
-
-
-def split_openmalaria_workflow(workflow_instance: Workflow, num_tasks: int, population_per_task: int, logger: logging.Logger):
-    """
-    Découpe un workflow OpenMalaria en tâches avec des scénarios distincts.
-    
-    Args:
-        workflow_instance (Workflow): Instance du workflow à découper.
-        num_tasks (int): Nombre de tâches à créer.
-        population_per_task (int): Taille de la population par tâche.
-        logger (logging.Logger): Logger pour les messages.
-    
-    Returns:
-        list: Liste des tâches créées.
-    """
-    input_dir = os.path.join(workflow_instance.executable_path, "inputs")
-    min_resources = get_min_volunteer_resources()
-    
-    docker_img = {
-        "name": "malaria-exp",
-        "tag": "latest",
-        "image_name": "malaria-exp:latest",
-    }
-    os.makedirs(input_dir, exist_ok=True)
-
-    tasks = []
-    for i in range(num_tasks):
-        # Générer le fichier de scénario
-        scenario_path = generate_openmalaria_scenario(
-            population_size=population_per_task,
-            output_dir=os.path.join(input_dir, f"shard_{i}"),
-            shard_id=i
-        )
-
-        # Calculer la taille du fichier d'entrée
-        input_size = max(1, os.path.getsize(scenario_path) // (1024 * 1024))
-
-        # Créer la tâche
-        task = Task.objects.create(
-            workflow=workflow_instance,
-            name=f"OpenMalaria Shard {i}",
-            description=f"Simulation OpenMalaria sur population {population_per_task}",
-            command="python run_simulation.py",
-            parameters=[],
-            input_files=[f"shard_{i}/scenario.xml"],
-            output_files=[f"output.txt"],
+            input_files=[f"shard_{i}/data.pkl", f"shard_{i}/partition.json"],
+            output_files=["model.pt", "metrics.json"],
             status=TaskStatus.CREATED,
             parent_task=None,
             is_subtask=False,
@@ -1309,16 +1334,190 @@ def split_openmalaria_workflow(workflow_instance: Workflow, num_tasks: int, popu
             docker_info=docker_img,
             required_resources={
                 "cpu": min_resources["min_cpu"],
-                "ram": min_resources["min_ram"],
-                "disk": max(min_resources["disk"], input_size / 1024 + 1),  # Ajouter 1 Go pour les sorties
+                "ram": max(min_resources["min_ram"], 2048),
+                "disk": min_resources["disk"],
             },
-            estimated_max_time=200,  # 5 min
+            estimated_max_time=max(1800, epochs * 60),
         )
         task.input_size = input_size
         task.save()
         tasks.append(task)
-        logger.warning(f"Tâche {i}: {task} créée avec succès")
-    
+        logger.warning("Tâche ML partition %s créée: %s", i, task.id)
+
+    workflow_instance.tasks.add(*tasks)
+    workflow_instance.save()
+    return tasks
+
+
+def split_openmalaria_workflow(
+    workflow_instance: Workflow,
+    num_tasks: int,
+    population_per_task: int,
+    logger: logging.Logger,
+):
+    """
+    Étude épidémiologique GLOBALE partitionnée en sous-populations.
+
+    1. Définit une étude globale (population totale, durée, paramètres partagés)
+    2. Partitionne la population en sous-ensembles contigus (une tâche = une partition)
+    3. Chaque volontaire simule sa sous-population
+    4. Le Manager agrège les sorties en indicateurs globaux pondérés
+    """
+    metadata = workflow_instance.metadata or {}
+    num_tasks = max(2, int(num_tasks or metadata.get("num_tasks") or 4))
+    total_population = int(
+        metadata.get("total_population")
+        or (num_tasks * int(population_per_task or 20000))
+    )
+    # Recalcule des tailles de partition (dernière partition absorbe le reste)
+    base_pop = total_population // num_tasks
+    simulation_days = int(metadata.get("simulation_days") or 3650)
+    monte_carlo_runs = int(metadata.get("monte_carlo_runs") or 12)
+    study_name = metadata.get("study_name") or f"MalariaStudy_{workflow_instance.id}"
+    study_id = str(workflow_instance.id)
+
+    epidemiology = {
+        "bite_rate": float(metadata.get("bite_rate", 0.3)),
+        "transmission_mh": float(metadata.get("transmission_mh", 0.5)),
+        "recovery_rate": float(metadata.get("recovery_rate", 0.05)),
+        "mosquito_density": float(metadata.get("mosquito_density", 2.0)),
+        "max_agents": int(metadata.get("max_agents", 15000)),
+    }
+
+    input_dir = os.path.join(workflow_instance.executable_path, "inputs")
+    os.makedirs(input_dir, exist_ok=True)
+    min_resources = get_min_volunteer_resources()
+    docker_img = {
+        "name": "malaria-exp",
+        "tag": "latest",
+        "image_name": "malaria-exp:latest",
+    }
+
+    global_study = {
+        "study_id": study_id,
+        "study_name": study_name,
+        "paradigm": "partition_simulate_aggregate",
+        "description": (
+            "Étude épidémiologique globale sur une population totale. "
+            "La population est partitionnée en sous-populations disjointes; "
+            "chaque volontaire exécute la simulation sur sa partition; "
+            "les résultats sont agrégés (prévalence pondérée, cas totaux, EIR)."
+        ),
+        "total_population": total_population,
+        "num_partitions": num_tasks,
+        "simulation_days": simulation_days,
+        "monte_carlo_runs": monte_carlo_runs,
+        "epidemiology": epidemiology,
+        "partitions": [],
+    }
+
+    tasks = []
+    offset = 0
+    for i in range(num_tasks):
+        # Dernière partition prend le reste pour couvrir toute la population
+        if i == num_tasks - 1:
+            pop_i = total_population - offset
+        else:
+            pop_i = base_pop
+        shard_dir = os.path.join(input_dir, f"shard_{i}")
+        os.makedirs(shard_dir, exist_ok=True)
+
+        scenario_path = generate_openmalaria_scenario(
+            population_size=pop_i,
+            output_dir=shard_dir,
+            shard_id=i,
+            study_name=study_name,
+            seed=1000 + i,
+        )
+
+        partition = {
+            "study_id": study_id,
+            "study_name": study_name,
+            "partition_index": i,
+            "num_partitions": num_tasks,
+            "population_offset": offset,
+            "population_size": pop_i,
+            "total_population": total_population,
+            "simulation_days": simulation_days,
+            "monte_carlo_runs": monte_carlo_runs,
+            "seed": 1000 + i,
+            "epidemiology": epidemiology,
+        }
+        partition_path = os.path.join(shard_dir, "partition.json")
+        with open(partition_path, "w", encoding="utf-8") as handle:
+            json.dump(partition, handle, indent=2)
+
+        global_study["partitions"].append(
+            {
+                "partition_index": i,
+                "population_offset": offset,
+                "population_size": pop_i,
+                "path": f"shard_{i}",
+            }
+        )
+
+        input_size = max(1, os.path.getsize(scenario_path) // (1024 * 1024))
+        # Estimation: agents * days * MC / débit approximatif
+        est_seconds = max(
+            1200,
+            int((min(pop_i, epidemiology["max_agents"]) * simulation_days * monte_carlo_runs) / 80_000),
+        )
+
+        task = Task.objects.create(
+            workflow=workflow_instance,
+            name=f"Malaria Partition {i}",
+            description=(
+                f"Partition {i}/{num_tasks} de l'étude globale "
+                f"(individus {offset}–{offset + pop_i - 1}, "
+                f"{simulation_days} jours, {monte_carlo_runs} réplicats MC)"
+            ),
+            command="python run_simulation.py",
+            parameters=[],
+            input_files=[f"shard_{i}/scenario.xml", f"shard_{i}/partition.json"],
+            output_files=["output.txt", "partition_metrics.json"],
+            status=TaskStatus.CREATED,
+            parent_task=None,
+            is_subtask=False,
+            progress=0,
+            start_time=None,
+            docker_info=docker_img,
+            required_resources={
+                "cpu": min_resources["min_cpu"],
+                "ram": max(min_resources["min_ram"], 2048),
+                "disk": max(min_resources["disk"], 2),
+            },
+            estimated_max_time=est_seconds,
+        )
+        task.input_size = input_size
+        task.save()
+        tasks.append(task)
+        logger.warning(
+            "Partition malaria %s: pop=%s offset=%s task=%s est=%ss",
+            i,
+            pop_i,
+            offset,
+            task.id,
+            est_seconds,
+        )
+        offset += pop_i
+
+    with open(os.path.join(input_dir, "global_study.json"), "w", encoding="utf-8") as handle:
+        json.dump(global_study, handle, indent=2)
+
+    metadata.update(
+        {
+            "num_tasks": num_tasks,
+            "total_population": total_population,
+            "population_per_task": base_pop,
+            "simulation_days": simulation_days,
+            "monte_carlo_runs": monte_carlo_runs,
+            "paradigm": "partition_simulate_aggregate",
+            "study_name": study_name,
+        }
+    )
+    workflow_instance.metadata = metadata
+    workflow_instance.save(update_fields=["metadata", "updated_at"])
+
     workflow_instance.tasks.add(*tasks)
     workflow_instance.save()
     return tasks

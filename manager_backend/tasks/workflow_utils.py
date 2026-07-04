@@ -162,13 +162,27 @@ def _aggregate_ml_training(workflow: Workflow) -> bool:
                     metrics.append(json.load(handle))
             except Exception:
                 continue
+        meta = workflow.metadata or {}
         summary = {
+            'paradigm': 'partition_train_aggregate',
+            'methodology': (
+                "Jeu de données global partitionné en shards disjoints. "
+                "Entraînement local sur chaque partition puis agrégation des "
+                "poids (moyenne fédérée) pour reconstruire le modèle global."
+            ),
+            'total_samples': meta.get('total_samples'),
+            'num_partitions': meta.get('num_tasks'),
+            'epochs': meta.get('epochs'),
             'models_merged': merge_info.get('models_merged', len(model_files)),
             'merged_model': output_path,
             'shard_metrics': metrics,
         }
         if metrics:
             summary['mean_accuracy'] = sum(m.get('accuracy', 0) for m in metrics) / len(metrics)
+            total_samples = sum(m.get('samples', 0) for m in metrics) or 1
+            summary['weighted_accuracy'] = (
+                sum(m.get('accuracy', 0) * m.get('samples', 0) for m in metrics) / total_samples
+            )
         with open(os.path.join(aggregated_dir, 'summary.json'), 'w', encoding='utf-8') as handle:
             json.dump(summary, handle, indent=2)
 
@@ -181,7 +195,12 @@ def _aggregate_ml_training(workflow: Workflow) -> bool:
 
 
 def _aggregate_openmalaria(workflow: Workflow) -> bool:
-    """Consolide les sorties OpenMalaria et calcule un resume global."""
+    """
+    Agrège les partitions d'une étude épidémiologique globale.
+
+    Prévalence globale = moyenne pondérée par la taille de chaque sous-population.
+    Cas totaux = somme des cas des partitions.
+    """
     try:
         output_root = _ensure_output_dir(workflow)
         aggregated_dir = os.path.join(output_root, 'aggregated')
@@ -194,7 +213,7 @@ def _aggregate_openmalaria(workflow: Workflow) -> bool:
 
         summary_rows = []
         for index, output_file in enumerate(output_files):
-            dest = os.path.join(aggregated_dir, f'shard_{index}_output.txt')
+            dest = os.path.join(aggregated_dir, f'partition_{index}_output.txt')
             shutil.copy2(output_file, dest)
             stats = {}
             with open(output_file, 'r', encoding='utf-8') as handle:
@@ -204,19 +223,72 @@ def _aggregate_openmalaria(workflow: Workflow) -> bool:
                         stats[key] = value
             summary_rows.append(stats)
 
-        populations = [float(row.get('population', 0)) for row in summary_rows]
-        total_cases = [float(row.get('total_cases', 0)) for row in summary_rows]
-        prevalences = [float(row.get('prevalence', 0)) for row in summary_rows]
+        # Copier aussi les métriques JSON de partition si présentes
+        for index, metrics_file in enumerate(
+            _collect_task_files(workflow, suffixes=['partition_metrics.json'])
+        ):
+            shutil.copy2(
+                metrics_file,
+                os.path.join(aggregated_dir, f'partition_{index}_metrics.json'),
+            )
+
+        populations = [float(row.get('population', 0) or 0) for row in summary_rows]
+        total_cases = [float(row.get('total_cases', 0) or 0) for row in summary_rows]
+        prevalences = [float(row.get('prevalence', 0) or 0) for row in summary_rows]
+        eirs = [float(row.get('eir_annual', 0) or 0) for row in summary_rows]
+        total_pop = sum(populations) or 1.0
+
+        # Moyennes pondérées par population (agrégation scientifiquement correcte)
+        weighted_prevalence = sum(
+            p * prev for p, prev in zip(populations, prevalences)
+        ) / total_pop
+        weighted_eir = sum(p * e for p, e in zip(populations, eirs)) / total_pop
+
+        meta = workflow.metadata or {}
         summary = {
-            'shards': len(summary_rows),
+            'paradigm': 'partition_simulate_aggregate',
+            'study_id': str(workflow.id),
+            'study_name': meta.get('study_name'),
+            'methodology': (
+                "Étude globale partitionnée en sous-populations disjointes. "
+                "Chaque partition est simulée indépendamment avec les mêmes "
+                "paramètres épidémiologiques; l'agrégation reconstruit les "
+                "indicateurs globaux par pondération selon la taille de population."
+            ),
+            'num_partitions': len(summary_rows),
             'total_population': sum(populations),
             'total_cases': sum(total_cases),
-            'mean_prevalence': (sum(prevalences) / len(prevalences)) if prevalences else 0,
-            'shard_summaries': summary_rows,
+            'global_prevalence': weighted_prevalence,
+            'global_eir_annual': weighted_eir,
+            'simulation_days': meta.get('simulation_days'),
+            'monte_carlo_runs': meta.get('monte_carlo_runs'),
+            'partition_summaries': summary_rows,
         }
         with open(os.path.join(aggregated_dir, 'summary.json'), 'w', encoding='utf-8') as handle:
             json.dump(summary, handle, indent=2)
-        logger.info("Aggregation OpenMalaria pour %s: %s shards", workflow.id, len(summary_rows))
+
+        # Manifeste d'étude pour la défense scientifique
+        study_doc = {
+            'title': meta.get('study_name') or f'OpenMalaria study {workflow.id}',
+            'workflow_id': str(workflow.id),
+            'paradigm': summary['paradigm'],
+            'methodology': summary['methodology'],
+            'global_results': {
+                'total_population': summary['total_population'],
+                'total_cases': summary['total_cases'],
+                'global_prevalence': summary['global_prevalence'],
+                'global_eir_annual': summary['global_eir_annual'],
+            },
+        }
+        with open(os.path.join(aggregated_dir, 'global_study_report.json'), 'w', encoding='utf-8') as handle:
+            json.dump(study_doc, handle, indent=2)
+
+        logger.info(
+            "Aggregation OpenMalaria %s: %s partitions, prev_globale=%.4f",
+            workflow.id,
+            len(summary_rows),
+            weighted_prevalence,
+        )
         return True
     except Exception as exc:
         logger.error("Echec de l'aggregation OpenMalaria pour %s: %s", workflow.id, exc)
