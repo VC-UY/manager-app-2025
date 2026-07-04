@@ -255,6 +255,17 @@ def release_stale_assignments(stale_seconds: int = ASSIGNMENT_STALE_SECONDS) -> 
         link.status = "EXPIRED"
         link.save(update_fields=["status"])
         released += 1
+        try:
+            from tasks.coordinator_sync import publish_task_status
+
+            publish_task_status(
+                task.workflow,
+                task,
+                clear_assignment=True,
+                message="Assignation expirée — tâche remise en file d'attente",
+            )
+        except Exception:
+            pass
         logger.info(
             "Tâche %s libérée (volontaire %s indisponible / assignation expirée)",
             task.id,

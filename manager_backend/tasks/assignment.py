@@ -271,17 +271,45 @@ def publish_assignments(
             )
         if not enriched:
             continue
-        proxy_publish(
-            "task/assignment",
-            {
-                "workflow_id": str(workflow.id),
-                "assignments": {volunteer_id: enriched},
-            },
-            token=token,
-            sender_id=sender,
-            request_id=str(uuid.uuid4()),
-            to_volunteers=False,
-        )
+        payload = {
+            "workflow_id": str(workflow.id),
+            "assignments": {volunteer_id: enriched},
+        }
+        # Coordinateur (Redis interne) + volontaires (proxy externe)
+        for to_volunteers in (False, True):
+            try:
+                proxy_publish(
+                    "task/assignment",
+                    payload,
+                    token=token,
+                    sender_id=sender,
+                    request_id=str(uuid.uuid4()),
+                    to_volunteers=to_volunteers,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Publication task/assignment (volunteers=%s) échouée: %s",
+                    to_volunteers,
+                    exc,
+                )
+        # Aligner le statut côté coordinateur (ASSIGNED, pas PENDING)
+        try:
+            from tasks.coordinator_sync import publish_task_status
+
+            for info in enriched:
+                try:
+                    task = Task.objects.get(id=info["task_id"])
+                except Task.DoesNotExist:
+                    continue
+                publish_task_status(
+                    workflow,
+                    task,
+                    volunteer_id=volunteer_id,
+                    message="Tâche assignée au volontaire",
+                )
+        except Exception as sync_err:
+            logger.warning("Sync statut assignation: %s", sync_err)
+
         published += len(enriched)
         logger.info(
             "Assigné %s tâche(s) du workflow %s au volontaire %s",

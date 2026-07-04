@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Iterable
+from typing import Iterable, Optional
 
 from redis_communication.proxy_rpc import proxy_publish
 from redis_communication.utils import get_manager_login_token
@@ -66,3 +66,36 @@ def publish_workflow_status(workflow, message: str = "") -> None:
         )
     except Exception as exc:
         logger.warning("Publication workflow/status_changed échouée: %s", exc)
+
+
+def publish_task_status(
+    workflow,
+    task,
+    *,
+    volunteer_id: Optional[str] = None,
+    message: str = "",
+    clear_assignment: bool = False,
+) -> None:
+    """Synchronise le statut d'une tâche vers le Coordinateur."""
+    token = get_manager_login_token(getattr(workflow, "owner", None))
+    sender = str(getattr(getattr(workflow, "owner", None), "remote_id", None) or "manager")
+    try:
+        proxy_publish(
+            "task/status_sync",
+            {
+                "task_id": str(task.id),
+                "workflow_id": str(workflow.id),
+                "status": task.status,
+                "progress": float(task.progress or 0),
+                "name": task.name,
+                "volunteer_id": volunteer_id,
+                "clear_assignment": clear_assignment,
+                "message": message or f"Statut tâche {task.status}",
+            },
+            token=token,
+            sender_id=sender,
+            request_id=str(uuid.uuid4()),
+            to_volunteers=False,
+        )
+    except Exception as exc:
+        logger.warning("Publication task/status_sync échouée pour %s: %s", task.id, exc)

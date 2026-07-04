@@ -191,14 +191,18 @@ export default function WorkflowDetailPage() {
   };
 
   // Obtenir les informations de statut avec icône et couleurs
-  const getStatusInfo = (status: string) => {
+  const getStatusInfo = (status: string, kind: 'workflow' | 'task' = 'workflow') => {
     const statusMap: Record<string, { color: string; bg: string; label: string }> = {
-      CREATED: { color: '#94A3B8', bg: 'rgba(148, 163, 184, 0.1)', label: 'Créé' },
+      CREATED:
+        kind === 'task'
+          ? { color: '#FBBF24', bg: 'rgba(251, 191, 36, 0.1)', label: "En file d'attente" }
+          : { color: '#94A3B8', bg: 'rgba(148, 163, 184, 0.1)', label: 'Créé' },
       VALIDATED: { color: '#60A5FA', bg: 'rgba(96, 165, 250, 0.1)', label: 'Validé' },
       SUBMITTED: { color: '#60A5FA', bg: 'rgba(96, 165, 250, 0.1)', label: 'Soumis' },
       SPLITTING: { color: '#38BDF8', bg: 'rgba(56, 189, 248, 0.12)', label: 'Découpage…' },
       ASSIGNING: { color: '#38BDF8', bg: 'rgba(56, 189, 248, 0.12)', label: 'Attribution…' },
       PENDING: { color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.12)', label: 'En attente de volontaires' },
+      ASSIGNED: { color: '#38BDF8', bg: 'rgba(56, 189, 248, 0.12)', label: 'Assignée' },
       RUNNING: { color: '#3B82F6', bg: 'rgba(59, 130, 246, 0.15)', label: 'En cours' },
       AGGREGATING: { color: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.12)', label: 'Agrégation…' },
       COMPLETED: { color: '#10B981', bg: 'rgba(16, 185, 129, 0.1)', label: 'Terminé' },
@@ -810,7 +814,7 @@ export default function WorkflowDetailPage() {
             <div className="p-6">
               <div className="grid grid-cols-1 gap-4">
                 {tasks.map((task) => {
-                  const taskStatusInfo = getStatusInfo(task.status);
+                  const taskStatusInfo = getStatusInfo(task.status, 'task');
                   
                   return (
                     <div key={task.id} className="rounded-lg overflow-hidden transition-all duration-300" style={{
