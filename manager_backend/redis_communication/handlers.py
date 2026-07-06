@@ -469,8 +469,24 @@ def handle_task_progress(channel: str, message: Message):
             from tasks.models import Task
             task = Task.objects.filter(id=task_id).first()
             if task:
-                task.progress = progress
+                try:
+                    progress_value = max(0.0, min(100.0, float(progress)))
+                except (TypeError, ValueError):
+                    progress_value = 0.0
+                if str(task.status).upper() == 'COMPLETED':
+                    progress_value = 100.0
+                elif progress_value < float(task.progress or 0):
+                    progress_value = float(task.progress or 0)
+                task.progress = progress_value
                 task.save(update_fields=['progress'])
+                try:
+                    from volunteers.models import VolunteerTask
+                    vt = VolunteerTask.objects.filter(task=task).first()
+                    if vt and vt.status not in ('COMPLETED', 'FAILED', 'EXPIRED', 'CANCEL'):
+                        vt.progress = progress_value
+                        vt.save(update_fields=['progress'])
+                except Exception:
+                    pass
         except Exception as db_error:
             logger.error(f"Erreur mise à jour DB pour task {task_id}: {db_error}")
 
@@ -543,6 +559,13 @@ def handle_task_status_update(channel: str, message: Message):
                 if task.status == 'COMPLETED':
                     task.progress = 100.0
                     task.save(update_fields=['status', 'progress'])
+                    try:
+                        from volunteers.models import VolunteerTask
+                        VolunteerTask.objects.filter(task=task).update(
+                            progress=100.0, status='COMPLETED',
+                        )
+                    except Exception:
+                        pass
                 else:
                     task.save(update_fields=['status'])
 

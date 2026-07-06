@@ -231,8 +231,15 @@ def handle_task_progress(channel: str, message: Message):
             progress_value = 0.0
         progress_value = max(0.0, min(100.0, progress_value))
 
-        # Toujours synchroniser Task.progress (source de vérité API / coordinator)
-        task.progress = progress_value
+        if task.status == TaskStatus.COMPLETED:
+            logger.debug(
+                "Progression ignorée pour tâche déjà COMPLETED: %s (%s%%)",
+                task.name, progress_value,
+            )
+            return True
+
+        # Toujours synchroniser Task.progress (monotone — jamais de régression)
+        task.progress = max(float(task.progress or 0), progress_value)
         if progress_value > 0 and task.status in (
             TaskStatus.CREATED, TaskStatus.PENDING, TaskStatus.ASSIGNED,
         ):
@@ -242,7 +249,8 @@ def handle_task_progress(channel: str, message: Message):
         task.save()
 
         if volunteer_task:
-            volunteer_task.progress = progress_value
+            if volunteer_task.status not in ('COMPLETED', 'FAILED', 'EXPIRED', 'CANCEL'):
+                volunteer_task.progress = max(float(volunteer_task.progress or 0), progress_value)
             if progress_value > 0 and volunteer_task.status in ('ASSIGNED', 'ACCEPTED', 'CREATED'):
                 volunteer_task.status = 'RUNNING'
                 if not volunteer_task.started_at:
@@ -339,10 +347,16 @@ def handle_task_status(channel: str, message: Message):
         
         # Traiter les différents statuts
         if status.lower() == 'completed':
-            # La tâche est terminée, télécharger les fichiers de sortie
+            # Toujours marquer terminé à 100 % avant traitement des fichiers
+            task.status = TaskStatus.COMPLETED
+            task.progress = 100.0
+            task.end_time = timezone.now()
+            task.save(update_fields=['status', 'progress', 'end_time'])
+
             volunteer_task.completed_at = timezone.now()
             volunteer_task.progress = 100.0
             volunteer_task.status = 'COMPLETED'
+            volunteer_task.save()
             logger.info(f"Tâche {task.name} terminée par le volontaire {volunteer.name}, téléchargement des fichiers de sortie")
 
             from websocket_service.client import notify_event
@@ -483,6 +497,8 @@ def handle_task_status(channel: str, message: Message):
             logger.info(f"Tâche {task.name} mise en pause par le volontaire {volunteer.name}")
         
         elif status.lower() in ('progress', 'running', 'started'):
+            if task.status == TaskStatus.COMPLETED:
+                return True
             try:
                 progress_value = float(data.get('progress', task.progress) or 0)
             except (TypeError, ValueError):
@@ -490,7 +506,7 @@ def handle_task_status(channel: str, message: Message):
             progress_value = max(0.0, min(100.0, progress_value))
 
             task.status = TaskStatus.RUNNING
-            task.progress = progress_value
+            task.progress = max(float(task.progress or 0), progress_value)
             if not task.start_time:
                 task.start_time = timezone.now()
             task.save()

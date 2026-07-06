@@ -136,6 +136,8 @@ def publish_task_status(
     """Synchronise le statut d'une tâche vers le Coordinateur."""
     token = get_manager_login_token(getattr(workflow, "owner", None))
     sender = str(getattr(getattr(workflow, "owner", None), "remote_id", None) or "manager")
+    status = str(getattr(task, "status", "") or "")
+    progress = 100.0 if status.upper() == "COMPLETED" else float(task.progress or 0)
     try:
         proxy_publish(
             "task/status_sync",
@@ -143,7 +145,7 @@ def publish_task_status(
                 "task_id": str(task.id),
                 "workflow_id": str(workflow.id),
                 "status": task.status,
-                "progress": float(task.progress or 0),
+                "progress": progress,
                 "name": task.name,
                 "volunteer_id": volunteer_id,
                 "clear_assignment": clear_assignment,
@@ -165,6 +167,8 @@ def publish_task_progress(
     progress: float,
 ) -> None:
     """Propage la progression vers le Coordinateur (canal task/progress)."""
+    if str(getattr(task, "status", "") or "").upper() == "COMPLETED":
+        return
     token = get_manager_login_token(getattr(workflow, "owner", None))
     sender = str(getattr(getattr(workflow, "owner", None), "remote_id", None) or "manager")
     try:
