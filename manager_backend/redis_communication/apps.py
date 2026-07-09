@@ -90,6 +90,7 @@ def _bootstrap_redis():
 def _pending_assignment_loop():
     """Présence + reprise périodique (CREATED, ASSIGNED expirées, FAILED retryables)."""
     import time
+    import random
 
     time.sleep(10)
     while True:
@@ -101,7 +102,8 @@ def _pending_assignment_loop():
                 logger.info("Boucle recovery: %s", result)
         except Exception as exc:
             logger.warning("Boucle d'assignation en attente: %s", exc)
-        time.sleep(15)
+        # Intervalle aléatoire pour lisser la charge (5s à 20s)
+        time.sleep(random.randint(5, 20))
 
 
 class RedisCommunicationConfig(AppConfig):
