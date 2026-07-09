@@ -61,12 +61,12 @@ class WorkflowViewSet(viewsets.ModelViewSet):
             metadata.setdefault('epochs', 25)
             metadata.setdefault('paradigm', 'partition_train_aggregate')
         if workflow.workflow_type == 'OPEN_MALARIA':
-            # Étude globale partitionnée (8–12 sous-populations)
+            # Mode test: charge allégée pour itérer vite (memoire/demo).
             metadata.setdefault('num_tasks', 8)
-            metadata.setdefault('total_population', 160000)
-            metadata.setdefault('population_per_task', 20000)
-            metadata.setdefault('simulation_days', 3650)
-            metadata.setdefault('monte_carlo_runs', 12)
+            metadata.setdefault('total_population', 16000)
+            metadata.setdefault('population_per_task', 2000)
+            metadata.setdefault('simulation_days', 120)
+            metadata.setdefault('monte_carlo_runs', 2)
             metadata.setdefault('paradigm', 'partition_simulate_aggregate')
         if workflow.workflow_type in ('MATRIX_ADDITION', 'MATRIX_MULTIPLICATION'):
             metadata.setdefault('num_tasks', 8)

@@ -1457,11 +1457,11 @@ def split_openmalaria_workflow(
         )
 
         input_size = max(1, os.path.getsize(scenario_path) // (1024 * 1024))
-        # Estimation par partition (plafonnée pour tenir dans les préférences volontaires typiques)
+        # Estimation par partition en mode test: 2 à 5 minutes.
         est_seconds = max(
-            300,
+            120,
             min(
-                1800,
+                300,
                 int(
                     (min(pop_i, epidemiology["max_agents"]) * simulation_days * monte_carlo_runs)
                     / 500_000
