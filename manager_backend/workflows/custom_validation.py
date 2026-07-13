@@ -56,6 +56,12 @@ def validate_custom_metadata(metadata: Dict[str, Any] | None) -> Tuple[bool, str
                     meta,
                 )
             docker = spec.get("docker_info") or meta.get("docker_info") or {}
+            uses_runtime = bool(
+                docker.get("bundle")
+                or docker.get("runtime") == "vc-uyr"
+                or spec.get("bundle")
+                or meta.get("bundle")
+            )
             image = (
                 docker.get("image_name")
                 or (
@@ -64,12 +70,13 @@ def validate_custom_metadata(metadata: Dict[str, Any] | None) -> Tuple[bool, str
                     else ""
                 )
             )
-            if not image or image in ("vcuy-custom:latest", ":latest"):
+            if not uses_runtime and (not image or image in ("vcuy-custom:latest", ":latest")):
                 return (
                     False,
                     (
-                        f"Tâche #{i + 1}: image Docker réelle obligatoire "
-                        "(ex. mon-image:latest)."
+                        f"Tâche #{i + 1}: fournissez un bundle vc-uyr "
+                        "(docker_info.runtime=vc-uyr / bundle=true) "
+                        "ou une image legacy temporaire."
                     ),
                     meta,
                 )
@@ -92,6 +99,7 @@ def validate_custom_metadata(metadata: Dict[str, Any] | None) -> Tuple[bool, str
         docker = {"name": name, "tag": tag or "latest", "image_name": docker if ":" in docker else f"{docker}:latest"}
         meta["docker_info"] = docker
 
+    uses_runtime = bool(docker.get("bundle") or docker.get("runtime") == "vc-uyr" or meta.get("bundle"))
     image_name = (
         docker.get("image_name")
         or (
@@ -100,20 +108,19 @@ def validate_custom_metadata(metadata: Dict[str, Any] | None) -> Tuple[bool, str
             else ""
         )
     )
-    if not image_name or image_name in ("vcuy-custom:latest", ":latest", "latest"):
-        return (
-            False,
-            (
-                "Workflow personnalisé: indiquez une image Docker réelle "
-                "(ex. python:3.12-slim ou mon-registre/mon-image:1.0)."
-            ),
-            meta,
-        )
-
-    docker.setdefault("name", image_name.split(":")[0])
-    docker.setdefault("tag", image_name.split(":")[-1] if ":" in image_name else "latest")
-    docker["image_name"] = image_name
-    meta["docker_info"] = docker
+    if uses_runtime:
+        docker["runtime"] = "vc-uyr"
+        docker["bundle"] = True
+        meta["docker_info"] = docker
+    elif not image_name or image_name in ("vcuy-custom:latest", ":latest", "latest"):
+        # Par défaut: exécution via bundle vc-uyr (plus de Docker)
+        docker = {"runtime": "vc-uyr", "bundle": True}
+        meta["docker_info"] = docker
+    else:
+        docker.setdefault("name", image_name.split(":")[0])
+        docker.setdefault("tag", image_name.split(":")[-1] if ":" in image_name else "latest")
+        docker["image_name"] = image_name
+        meta["docker_info"] = docker
 
     try:
         num_tasks = int(meta.get("num_tasks") or 8)

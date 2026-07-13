@@ -7,6 +7,8 @@ from workflows.models import WorkflowType, Workflow
 import json
 import os
 import pickle
+import shutil
+from pathlib import Path
 from tasks.models import Task, TaskStatus
 from volunteers.models import Volunteer
 from workflows.models import WorkflowType
@@ -1387,11 +1389,18 @@ def split_openmalaria_workflow(
     input_dir = os.path.join(workflow_instance.executable_path, "inputs")
     os.makedirs(input_dir, exist_ok=True)
     min_resources = get_min_volunteer_resources()
+    # Plus d'image Docker : exécution via bundle self-contained vc-uyr
     docker_img = {
-        "name": "malaria-exp",
-        "tag": "latest",
-        "image_name": "malaria-exp:latest",
+        "runtime": "vc-uyr",
+        "bundle": True,
     }
+
+    worker_script = Path(__file__).resolve().parent / "examples" / "openmalaria_worker" / "run_simulation.py"
+    if not worker_script.is_file():
+        raise FileNotFoundError(f"Worker malaria introuvable: {worker_script}")
+
+    from workflows.bundle_builder import create_task_bundle
+
 
     global_study = {
         "study_id": study_id,
@@ -1457,6 +1466,26 @@ def split_openmalaria_workflow(
         )
 
         input_size = max(1, os.path.getsize(scenario_path) // (1024 * 1024))
+
+        # Bundle self-contained : run.sh + run_simulation.py + entrées du shard
+        staging_dir = os.path.join(shard_dir, "bundle_staging")
+        os.makedirs(staging_dir, exist_ok=True)
+        shutil.copy2(worker_script, os.path.join(staging_dir, "run_simulation.py"))
+        shutil.copy2(scenario_path, os.path.join(staging_dir, "scenario.xml"))
+        shutil.copy2(partition_path, os.path.join(staging_dir, "partition.json"))
+        bundle_name = f"shard_{i}_bundle.tar.gz"
+        bundle_path = os.path.join(shard_dir, bundle_name)
+        create_task_bundle(
+            staging_dir=staging_dir,
+            bundle_path=bundle_path,
+            command="python3 run_simulation.py",
+        )
+        try:
+            shutil.rmtree(staging_dir)
+        except OSError:
+            pass
+        input_size = max(input_size, max(1, os.path.getsize(bundle_path) // (1024 * 1024)))
+
         # Estimation par partition en mode test: 2 à 5 minutes.
         est_seconds = max(
             120,
@@ -1477,9 +1506,9 @@ def split_openmalaria_workflow(
                 f"(individus {offset}–{offset + pop_i - 1}, "
                 f"{simulation_days} jours, {monte_carlo_runs} réplicats MC)"
             ),
-            command="python run_simulation.py",
+            command="python3 run_simulation.py",
             parameters=[],
-            input_files=[f"shard_{i}/scenario.xml", f"shard_{i}/partition.json"],
+            input_files=[f"shard_{i}/{bundle_name}"],
             output_files=["output.txt", "partition_metrics.json"],
             status=TaskStatus.CREATED,
             parent_task=None,

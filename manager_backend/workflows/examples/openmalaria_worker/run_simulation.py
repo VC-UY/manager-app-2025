@@ -21,9 +21,15 @@ from pathlib import Path
 
 
 def find_input_file(name: str) -> Path | None:
-    roots = [Path("/input"), Path("input"), Path(".")]
+    roots = [
+        Path(os.environ["vc_INPUT"]) if os.environ.get("vc_INPUT") else None,
+        Path(os.environ["INPUT_DIR"]) if os.environ.get("INPUT_DIR") else None,
+        Path("/input"),
+        Path("input"),
+        Path("."),
+    ]
     for root in roots:
-        if not root.exists():
+        if root is None or not root.exists():
             continue
         direct = root / name
         if direct.exists():
@@ -109,7 +115,11 @@ def main():
         raise FileNotFoundError("Aucun scenario.xml trouvé dans /input")
 
     partition = load_partition()
-    output_dir = Path(os.environ.get("OUTPUT_DIR", "/output"))
+    output_dir = Path(
+        os.environ.get("vc_OUTPUT")
+        or os.environ.get("OUTPUT_DIR")
+        or "/output"
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     population = int(partition.get("population_size") or parse_population(scenario))

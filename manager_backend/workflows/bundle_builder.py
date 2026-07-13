@@ -1,0 +1,82 @@
+"""
+Construction de bundles self-contained (.tar.gz + run.sh) pour vc-uyr.
+Remplace les images Docker comme artefact d'exécution des tâches.
+"""
+
+from __future__ import annotations
+
+import io
+import logging
+import os
+import shutil
+import tarfile
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_RUN_SH = """#!/bin/bash
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
+
+export OUTPUT_DIR="${vc_OUTPUT:-$SCRIPT_DIR/output}"
+mkdir -p "$OUTPUT_DIR"
+
+if [ -n "${vc_INPUT:-}" ] && [ -d "$vc_INPUT" ]; then
+  find "$vc_INPUT" -maxdepth 3 -type f 2>/dev/null | while read -r src; do
+    base="$(basename "$src")"
+    if [ ! -f "$SCRIPT_DIR/$base" ]; then
+      cp -f "$src" "$SCRIPT_DIR/$base" || true
+    fi
+  done
+fi
+
+__COMMAND__
+"""
+
+
+def write_run_sh(dest_dir: str | Path, command: str) -> Path:
+    dest = Path(dest_dir)
+    dest.mkdir(parents=True, exist_ok=True)
+    run_sh = dest / "run.sh"
+    content = DEFAULT_RUN_SH.replace("__COMMAND__", (command or "true").strip() or "true")
+    run_sh.write_text(content, encoding="utf-8")
+    run_sh.chmod(0o755)
+    return run_sh
+
+
+def create_task_bundle(
+    staging_dir: str | Path,
+    bundle_path: str | Path,
+    command: str,
+    extra_files: list[str | Path] | None = None,
+) -> Path:
+    """
+    Crée staging_dir/run.sh + archive bundle_path (.tar.gz) contenant
+    tous les fichiers du staging (self-contained).
+    """
+    staging = Path(staging_dir)
+    staging.mkdir(parents=True, exist_ok=True)
+    write_run_sh(staging, command)
+
+    if extra_files:
+        for src in extra_files:
+            src_path = Path(src)
+            if src_path.is_file():
+                shutil.copy2(src_path, staging / src_path.name)
+
+    bundle = Path(bundle_path)
+    bundle.parent.mkdir(parents=True, exist_ok=True)
+    if bundle.exists():
+        bundle.unlink()
+
+    with tarfile.open(bundle, "w:gz") as tar:
+        for item in sorted(staging.rglob("*")):
+            if not item.is_file():
+                continue
+            if item.resolve() == bundle.resolve():
+                continue
+            tar.add(str(item), arcname=item.relative_to(staging).as_posix())
+
+    logger.info("Bundle créé: %s (%s octets)", bundle, bundle.stat().st_size)
+    return bundle
