@@ -30,23 +30,36 @@ class SimpleNet(nn.Module):
 
 
 def find_data_file() -> Path:
-    candidates = [
-        Path("/input/data.pkl"),
-        Path("/input/shard_0/data.pkl"),
-        Path("input/data.pkl"),
-        Path("data.pkl"),
-    ]
-    if Path("/input").exists():
-        candidates.extend(Path("/input").rglob("data.pkl"))
+    roots = []
+    if os.environ.get("vc_INPUT"):
+        roots.append(Path(os.environ["vc_INPUT"]))
+    if os.environ.get("INPUT_DIR"):
+        roots.append(Path(os.environ["INPUT_DIR"]))
+    roots.extend([Path("/input"), Path("input"), Path(".")])
+    candidates = []
+    for root in roots:
+        if not root.exists():
+            continue
+        candidates.extend(
+            [
+                root / "data.pkl",
+                root / "shard_0" / "data.pkl",
+            ]
+        )
+        candidates.extend(root.rglob("data.pkl"))
     for path in candidates:
         if path.exists():
             return path
-    raise FileNotFoundError("Aucun data.pkl trouve dans /input")
+    raise FileNotFoundError("Aucun data.pkl trouvé (vc_INPUT/INPUT_DIR/./input)")
 
 
 def main():
     data_file = find_data_file()
-    output_dir = Path(os.environ.get("OUTPUT_DIR", "/output"))
+    output_dir = Path(
+        os.environ.get("vc_OUTPUT")
+        or os.environ.get("OUTPUT_DIR")
+        or "/output"
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     with open(data_file, "rb") as f:

@@ -1308,15 +1308,30 @@ def split_ml_training_workflow(workflow_instance: Workflow, logger: logging.Logg
     workflow_instance.metadata = metadata
     workflow_instance.save(update_fields=["metadata", "updated_at"])
 
-    docker_img = {
-        "name": "vcuy-ml-train",
-        "tag": "latest",
-        "image_name": "vcuy-ml-train:latest",
-    }
+    from workflows.bundle_builder import RUNTIME_META, package_files_as_bundle
+
+    docker_img = dict(RUNTIME_META)
+    worker_script = Path(__file__).resolve().parent / "examples" / "ml_training" / "train_on_shard.py"
     tasks = []
     for i in range(num_shards):
-        data_path = os.path.join(input_dir, f"shard_{i}/data.pkl")
+        shard_dir = os.path.join(input_dir, f"shard_{i}")
+        data_path = os.path.join(shard_dir, "data.pkl")
+        partition_path = os.path.join(shard_dir, "partition.json")
+        files = [data_path]
+        if os.path.isfile(partition_path):
+            files.append(partition_path)
         input_size = max(1, os.path.getsize(data_path) // (1024 * 1024))
+
+        bundle_name = "task_bundle.tar.gz"
+        bundle_path = os.path.join(shard_dir, bundle_name)
+        package_files_as_bundle(
+            files=files,
+            command="python3 train_on_shard.py",
+            bundle_path=bundle_path,
+            worker_scripts=[worker_script] if worker_script.is_file() else None,
+        )
+        input_size = max(input_size, max(1, os.path.getsize(bundle_path) // (1024 * 1024)))
+
         task = Task.objects.create(
             workflow=workflow_instance,
             name=f"Train Partition {i}",
@@ -1324,9 +1339,9 @@ def split_ml_training_workflow(workflow_instance: Workflow, logger: logging.Logg
                 f"Entraînement local sur partition {i}/{num_shards} "
                 f"du jeu global ({samples_per_shard} samples, {epochs} epochs)"
             ),
-            command="python train_on_shard.py",
+            command="python3 train_on_shard.py",
             parameters=[],
-            input_files=[f"shard_{i}/data.pkl", f"shard_{i}/partition.json"],
+            input_files=[f"shard_{i}/{bundle_name}"],
             output_files=["model.pt", "metrics.json"],
             status=TaskStatus.CREATED,
             parent_task=None,
@@ -1344,7 +1359,7 @@ def split_ml_training_workflow(workflow_instance: Workflow, logger: logging.Logg
         task.input_size = input_size
         task.save()
         tasks.append(task)
-        logger.warning("Tâche ML partition %s créée: %s", i, task.id)
+        logger.warning("Tâche ML partition %s créée (bundle): %s", i, task.id)
 
     workflow_instance.tasks.add(*tasks)
     workflow_instance.save()

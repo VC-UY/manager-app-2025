@@ -6,10 +6,14 @@ import math
 import os
 import pickle
 import logging
+from pathlib import Path
 
 from tasks.models import Task, TaskStatus
+from workflows.bundle_builder import RUNTIME_META, package_files_as_bundle
 
 logger = logging.getLogger(__name__)
+
+EXAMPLES = Path(__file__).resolve().parent / "examples"
 
 
 def _base_input_dir(workflow_instance) -> str:
@@ -35,7 +39,7 @@ def _create_task(workflow_instance, index, name, command, input_files, output_fi
         is_subtask=False,
         progress=0,
         start_time=None,
-        docker_info=docker_info,
+        docker_info=docker_info or dict(RUNTIME_META),
         required_resources=required_resources,
         estimated_max_time=estimated_max_time,
     )
@@ -53,6 +57,10 @@ def _create_task(workflow_instance, index, name, command, input_files, output_fi
     return task
 
 
+def _bundle_rel_path(shard_subdir: str, name: str = "task_bundle.tar.gz") -> str:
+    return f"{shard_subdir}/{name}"
+
+
 def split_matrix_workflow(workflow_instance, operation: str, split_logger: logging.Logger, num_tasks: int = 4):
     """
     Découpe une opération matricielle (addition ou multiplication) en tâches par blocs de lignes.
@@ -65,8 +73,9 @@ def split_matrix_workflow(workflow_instance, operation: str, split_logger: loggi
     min_resources = _get_min_resources()
 
     input_dir = _base_input_dir(workflow_instance)
-    docker_img = metadata.get('docker_info', {'name': 'vcuy-matrix', 'tag': 'latest'})
-    command = metadata.get('command', f'python matrix_{operation}.py')
+    worker_name = "matrix_multiply.py" if operation == "multiply" else "matrix_add.py"
+    worker_script = EXAMPLES / "matrix_worker" / worker_name
+    command = metadata.get('command', f'python3 {worker_name}')
 
     rng = np.random.default_rng(int(metadata.get('seed', 42)))
     matrix_a = rng.random((matrix_size, matrix_size), dtype=np.float32)
@@ -83,8 +92,7 @@ def split_matrix_workflow(workflow_instance, operation: str, split_logger: loggi
 
         shard_dir = os.path.join(input_dir, f'shard_{i}')
         os.makedirs(shard_dir, exist_ok=True)
-        rel_data = f'shard_{i}/data.pkl'
-        data_path = os.path.join(input_dir, rel_data)
+        data_path = os.path.join(shard_dir, 'data.pkl')
 
         with open(data_path, 'wb') as f:
             pickle.dump({
@@ -96,6 +104,15 @@ def split_matrix_workflow(workflow_instance, operation: str, split_logger: loggi
                 'full_size': matrix_size,
             }, f)
 
+        bundle_rel = _bundle_rel_path(f'shard_{i}')
+        bundle_path = os.path.join(input_dir, bundle_rel)
+        package_files_as_bundle(
+            files=[data_path],
+            command=command,
+            bundle_path=bundle_path,
+            worker_scripts=[worker_script] if worker_script.is_file() else None,
+        )
+
         block_rows = end - start
         ram_mb = max(512, int(block_rows * matrix_size * 4 * 3 / (1024 * 1024)))
 
@@ -104,9 +121,9 @@ def split_matrix_workflow(workflow_instance, operation: str, split_logger: loggi
             i,
             name=f'Matrix {operation} block {i}',
             command=command,
-            input_files=[rel_data],
-            output_files=[f'shard_{i}/output/result.pkl'],
-            docker_info=docker_img,
+            input_files=[bundle_rel],
+            output_files=['result.pkl'],
+            docker_info=dict(RUNTIME_META),
             required_resources={
                 'cpu': min_resources['min_cpu'],
                 'ram': max(min_resources['min_ram'], ram_mb),
@@ -115,7 +132,7 @@ def split_matrix_workflow(workflow_instance, operation: str, split_logger: loggi
             estimated_max_time=int(metadata.get('estimated_max_time', 120)),
         )
         tasks.append(task)
-        split_logger.info('Tâche matrice %d créée (%d lignes)', i, block_rows)
+        split_logger.info('Tâche matrice %d créée (%d lignes, bundle)', i, block_rows)
 
     workflow_instance.tasks.add(*tasks)
     workflow_instance.save()
@@ -130,16 +147,17 @@ def split_ml_inference_workflow(workflow_instance, split_logger: logging.Logger)
     min_resources = _get_min_resources()
 
     input_dir = _base_input_dir(workflow_instance)
-    docker_img = metadata.get('docker_info', {'name': 'vcuy-inference', 'tag': 'latest'})
-    command = metadata.get('command', 'python inference_batch.py')
+    command = metadata.get('command', 'python3 inference_batch.py')
+    if command.startswith('python '):
+        command = 'python3 ' + command[len('python '):]
     model_file = metadata.get('model_file', 'model.pth')
+    model_abs = os.path.join(input_dir, model_file) if model_file else None
 
     tasks = []
     for i in range(num_tasks):
         shard_dir = os.path.join(input_dir, f'batch_{i}')
         os.makedirs(shard_dir, exist_ok=True)
-        rel_data = f'batch_{i}/batch.pkl'
-        data_path = os.path.join(input_dir, rel_data)
+        data_path = os.path.join(shard_dir, 'batch.pkl')
 
         with open(data_path, 'wb') as f:
             pickle.dump({
@@ -149,14 +167,26 @@ def split_ml_inference_workflow(workflow_instance, split_logger: logging.Logger)
                 'offset': i * samples_per_task,
             }, f)
 
+        files = [data_path]
+        if model_abs and os.path.isfile(model_abs):
+            files.append(model_abs)
+
+        bundle_rel = _bundle_rel_path(f'batch_{i}')
+        bundle_path = os.path.join(input_dir, bundle_rel)
+        package_files_as_bundle(
+            files=files,
+            command=command,
+            bundle_path=bundle_path,
+        )
+
         task = _create_task(
             workflow_instance,
             i,
             name=f'Inference batch {i}',
             command=command,
-            input_files=[rel_data, model_file] if model_file else [rel_data],
-            output_files=[f'batch_{i}/output/predictions.json'],
-            docker_info=docker_img,
+            input_files=[bundle_rel],
+            output_files=['predictions.json'],
+            docker_info=dict(RUNTIME_META),
             required_resources={
                 'cpu': max(1, min_resources['min_cpu']),
                 'ram': max(min_resources['min_ram'], 1024),
@@ -166,7 +196,7 @@ def split_ml_inference_workflow(workflow_instance, split_logger: logging.Logger)
             estimated_max_time=int(metadata.get('estimated_max_time', 180)),
         )
         tasks.append(task)
-        split_logger.info('Tâche inférence %d créée', i)
+        split_logger.info('Tâche inférence %d créée (bundle)', i)
 
     workflow_instance.tasks.add(*tasks)
     workflow_instance.save()
@@ -197,19 +227,43 @@ def split_custom_workflow(workflow_instance, split_logger: logging.Logger):
             for i in range(num_tasks)
         ]
 
-    docker_img = metadata.get('docker_info')
+    docker_img = dict(RUNTIME_META)
+    meta_docker = metadata.get('docker_info') or {}
+    if isinstance(meta_docker, dict) and meta_docker.get('runtime') == 'vc-uyr':
+        docker_img = {**RUNTIME_META, **meta_docker}
     tasks = []
+    input_dir = _base_input_dir(workflow_instance)
 
     for i, spec in enumerate(task_specs):
         name = spec.get('name', f'Custom task {i}')
+        command = spec.get('command', 'true')
+        if isinstance(command, str) and command.startswith('python '):
+            command = 'python3 ' + command[len('python '):]
+
+        # Bundle self-contained à partir des fichiers déclarés (s'ils existent)
+        shard_dir = os.path.join(input_dir, f'custom_{i}')
+        os.makedirs(shard_dir, exist_ok=True)
+        source_files = []
+        for rel in (spec.get('input_files') or []):
+            full = os.path.join(input_dir, rel)
+            if os.path.isfile(full):
+                source_files.append(full)
+        bundle_rel = _bundle_rel_path(f'custom_{i}')
+        bundle_path = os.path.join(input_dir, bundle_rel)
+        package_files_as_bundle(
+            files=source_files,
+            command=command,
+            bundle_path=bundle_path,
+        )
+
         task = _create_task(
             workflow_instance,
             i,
             name=name,
-            command=spec.get('command', 'true'),
-            input_files=spec.get('input_files', []),
+            command=command,
+            input_files=[bundle_rel],
             output_files=spec.get('output_files', []),
-            docker_info=spec.get('docker_info', docker_img),
+            docker_info=spec.get('docker_info') or docker_img,
             required_resources=spec.get('required_resources', {
                 'cpu': min_resources['min_cpu'],
                 'ram': min_resources['min_ram'],

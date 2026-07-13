@@ -5,14 +5,14 @@ Remplace les images Docker comme artefact d'exécution des tâches.
 
 from __future__ import annotations
 
-import io
 import logging
-import os
 import shutil
 import tarfile
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+RUNTIME_META = {"runtime": "vc-uyr", "bundle": True}
 
 DEFAULT_RUN_SH = """#!/bin/bash
 set -euo pipefail
@@ -20,6 +20,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 export OUTPUT_DIR="${vc_OUTPUT:-$SCRIPT_DIR/output}"
+export INPUT_DIR="${vc_INPUT:-$SCRIPT_DIR}"
 mkdir -p "$OUTPUT_DIR"
 
 if [ -n "${vc_INPUT:-}" ] && [ -d "$vc_INPUT" ]; then
@@ -79,4 +80,43 @@ def create_task_bundle(
             tar.add(str(item), arcname=item.relative_to(staging).as_posix())
 
     logger.info("Bundle créé: %s (%s octets)", bundle, bundle.stat().st_size)
+    return bundle
+
+
+def package_files_as_bundle(
+    *,
+    files: list[str | Path],
+    command: str,
+    bundle_path: str | Path,
+    worker_scripts: list[str | Path] | None = None,
+) -> Path:
+    """
+    Empaquette des fichiers d'entrée (+ scripts worker optionnels) dans un
+    bundle .tar.gz prêt pour vc-uyr.
+    """
+    staging = Path(str(bundle_path) + ".staging")
+    if staging.exists():
+        shutil.rmtree(staging)
+    staging.mkdir(parents=True, exist_ok=True)
+
+    for src in files:
+        src_path = Path(src)
+        if src_path.is_file():
+            shutil.copy2(src_path, staging / src_path.name)
+
+    for src in worker_scripts or []:
+        src_path = Path(src)
+        if src_path.is_file():
+            shutil.copy2(src_path, staging / src_path.name)
+
+    # Normalise "python foo.py" -> "python3 foo.py"
+    cmd = (command or "true").strip()
+    if cmd.startswith("python "):
+        cmd = "python3 " + cmd[len("python ") :]
+
+    bundle = create_task_bundle(staging, bundle_path, cmd)
+    try:
+        shutil.rmtree(staging)
+    except OSError:
+        pass
     return bundle

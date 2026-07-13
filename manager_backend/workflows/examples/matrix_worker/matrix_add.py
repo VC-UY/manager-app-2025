@@ -9,23 +9,30 @@ import numpy as np
 
 
 def main():
-    input_path = Path(os.environ.get("INPUT_FILE", "/input/data.pkl"))
-    output_dir = Path(os.environ.get("OUTPUT_DIR", "/output"))
+    output_dir = Path(
+        os.environ.get("vc_OUTPUT")
+        or os.environ.get("OUTPUT_DIR")
+        or "/output"
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Chemins standards utilises par le volontaire
-    candidates = [
-        input_path,
-        Path("/input/data.pkl"),
-        Path("/input/shard_0/data.pkl"),
-    ]
-    # Chercher le premier .pkl dans /input
-    if Path("/input").exists():
-        candidates.extend(Path("/input").rglob("data.pkl"))
+    roots = []
+    if os.environ.get("vc_INPUT"):
+        roots.append(Path(os.environ["vc_INPUT"]))
+    if os.environ.get("INPUT_DIR"):
+        roots.append(Path(os.environ["INPUT_DIR"]))
+    roots.extend([Path("/input"), Path("input"), Path(".")])
+
+    candidates = [Path(os.environ.get("INPUT_FILE", "/input/data.pkl"))]
+    for root in roots:
+        if not root.exists():
+            continue
+        candidates.append(root / "data.pkl")
+        candidates.extend(root.rglob("data.pkl"))
 
     data_file = next((p for p in candidates if p.exists()), None)
     if data_file is None:
-        raise FileNotFoundError("Aucun data.pkl trouve dans /input")
+        raise FileNotFoundError("Aucun data.pkl trouvé (vc_INPUT/INPUT_DIR)")
 
     with open(data_file, "rb") as f:
         payload = pickle.load(f)
