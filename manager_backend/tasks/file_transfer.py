@@ -33,14 +33,37 @@ def _safe_join(base_dir: str, relative_path: str) -> str:
 @permission_classes([AllowAny])
 def serve_workflow_input_file(request, workflow_id, file_path):
     """Sert un fichier d'entree du workflow aux volontaires."""
-    workflow = get_object_or_404(Workflow, id=workflow_id)
-    base_dir = (workflow.input_path or "").strip()
+    workflow = Workflow.objects.filter(id=workflow_id).first()
+    base_dir = ""
+    if workflow:
+        base_dir = (workflow.input_path or "").strip()
+
+    # Fallback: fichiers encore présents sur disque alors que la ligne DB a disparu
     if not base_dir or not os.path.isdir(base_dir):
-        raise Http404("Repertoire d'entree introuvable")
+        data_root = os.environ.get("WORKFLOW_DATA_ROOT", "/data/workflow_data")
+        candidates = []
+        if os.path.isdir(data_root):
+            for owner in os.listdir(data_root):
+                cand = os.path.join(data_root, owner, str(workflow_id), "inputs")
+                if os.path.isdir(cand):
+                    candidates.append(cand)
+        if candidates:
+            base_dir = candidates[0]
+            logger.warning(
+                "workflow-files fallback disque pour %s → %s",
+                workflow_id,
+                base_dir,
+            )
+        else:
+            raise Http404("Repertoire d'entree introuvable")
 
     full_path = _safe_join(base_dir, file_path)
     if not os.path.isfile(full_path):
-        raise Http404("Fichier introuvable")
+        # Compat: parfois le chemin demandé inclut déjà "inputs/"
+        if file_path.startswith("inputs/"):
+            full_path = _safe_join(base_dir, file_path[len("inputs/") :])
+        if not os.path.isfile(full_path):
+            raise Http404("Fichier introuvable")
 
     return FileResponse(open(full_path, "rb"), as_attachment=True, filename=os.path.basename(full_path))
 
