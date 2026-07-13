@@ -44,7 +44,13 @@ from src.config import (
     COMPRESSION, QUANTIZATION_BITS, SPARSIFICATION_RATIO,
     HEARTBEAT_INTERVAL, SOCKET_TIMEOUT,
     MAX_RETRIES, RETRY_DELAY, LOG_LEVEL, STATS_DIR,
-    SW_UCB_WINDOW, SW_UCB_CONFIDENCE,
+    SW_UCB_WINDOW, SW_UCB_CONFIDENCE, ADAPTIVE_LR_METHOD,
+    ADPSGD_ENABLED, ADPSGD_TOPOLOGY, ADPSGD_ROLE, ADPSGD_ALPHA,
+    PEER_TIMEOUT, ADPSGD_SKIP_FACTOR_MAX, ADPSGD_STALENESS_THRESHOLD,
+)
+from src.adpsgd import (
+    BipartiteTopology, StaleModelReader, ADPSGDStats,
+    adpsgd_average, build_topology, get_neighbor_macs,
 )
 from src.protocol import (
     send_message, receive_message,
@@ -90,17 +96,34 @@ class Volunteer:
         self.adv_profiler.capture_baseline()
 
         # Identité réseau
-        self.my_mac = get_mac_address()
+        # Si on a un volunteer_id > 0, on le reflète dans l'adresse MAC
+        # pour éviter les collisions lors de simulations locales sur la même machine.
+        base_mac = get_mac_address()
+        if self.vol_id > 0:
+            parts = base_mac.split(":")
+            if len(parts) == 6:
+                parts[-1] = f"{self.vol_id:02X}"
+                self.my_mac = ":".join(parts)
+            else:
+                self.my_mac = f"{base_mac[:-2]}{self.vol_id:02X}"
+        else:
+            self.my_mac = base_mac
         self.resources = get_resource_info(
             cpu_cores=cpu_cores, ram_gb=ram_gb,
             network_bandwidth_mbps=network_bandwidth_mbps,
         )
 
         # Modèle, données, optimiseur
+        # Seed both CPU and GPU to ensure identical initialization of weights across all volunteers
+        torch.manual_seed(42)
+        import numpy as np
+        import random
+        np.random.seed(42)
+        random.seed(42)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = create_model(MODEL_NAME, NUM_CLASSES).to(self.device)
         self.train_loader, self.test_loader = load_dataset(
-            dataset=DATASET, data_dir="./data",
+            dataset=DATASET, data_dir=os.path.join(os.path.dirname(__file__), "data"),
             volunteer_id=self.vol_id, n_volunteers=self.n_volunteers,
             partition=DATA_PARTITION, batch_size=BATCH_SIZE,
         )
@@ -121,12 +144,66 @@ class Volunteer:
         )
         self.round_num = 0
 
+        # Initialisation du learning rate adaptatif
+        self.current_lr = LEARNING_RATE
+        
+        # AdaStair : rounds où le LR sera divisé par 2
+        self.rstair_rounds = sorted(list(set(
+            r for r in [int(MAX_ROUNDS * 0.50), int(MAX_ROUNDS * 0.75), int(MAX_ROUNDS * 0.85)]
+            if r > 0
+        )))
+        
+        # AdaLoss : patience (en rounds) avant division par 2
+        self.rloss_patience = [
+            max(1, int(MAX_ROUNDS * 0.25)),
+            max(1, int(MAX_ROUNDS * 0.15)),
+            max(1, int(MAX_ROUNDS * 0.10))
+        ]
+        self.adaloss_alpha = 0
+        self.adaloss_counter = 0
+        self.adaloss_last_loss = float('inf')
+
+        # ─── AD-PSGD ──────────────────────────────────────────────────────
+        # Effective role : overridable via ADPSGD_ROLE env, sinon pair=active / impair=passive
+        _effective_id = self.vol_id
+        if ADPSGD_ROLE == "active":
+            _effective_id = 0   # pair → active
+        elif ADPSGD_ROLE == "passive":
+            _effective_id = 1   # impair → passive
+
+        self.adpsgd_topo = build_topology(
+            volunteer_id=_effective_id,
+            n_volunteers=self.n_volunteers,
+            topology_type=ADPSGD_TOPOLOGY,
+        )
+        # Lecteur de snapshot stale (x̂_k = x_{k-τ})
+        self.adpsgd_stale_reader = StaleModelReader(self.model)
+        # Statistiques AD-PSGD par round
+        self.adpsgd_stats = ADPSGDStats(self.adpsgd_topo)
+
+        logging.info(
+            f"[Volontaire {self.vol_id}] AD-PSGD "
+            f"{'ACTIVÉ' if ADPSGD_ENABLED else 'DÉSACTIVÉ'} | "
+            f"role={self.adpsgd_topo.role} | "
+            f"topology={ADPSGD_TOPOLOGY} | "
+            f"alpha={ADPSGD_ALPHA} | "
+            f"neighbors={self.adpsgd_topo.get_neighbors()}"
+        )
+
         # État
         self._running = True
         self._stats = StatsTracker(volunteer_ip=self.my_ip, results_dir=STATS_DIR)
         self.last_neighbors_list = []
         self.round_recv_details = []
         self._heartbeat_sock: Optional[socket.socket] = None
+
+        # Suivi d'inactivité des pairs pour arrêt automatique
+        self.last_active_peer_time = time.time()
+        self.peer_timeout = PEER_TIMEOUT
+
+        # Facteur de saut adaptatif (AD-PSGD)
+        self.adpsgd_skip_factor = 1
+        self.adpsgd_skip_counter = 0
 
         signal.signal(signal.SIGINT, self._on_signal)
         signal.signal(signal.SIGTERM, self._on_signal)
@@ -329,12 +406,15 @@ class Volunteer:
             try:
                 self._heartbeat_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self._heartbeat_sock.settimeout(SOCKET_TIMEOUT)
+                # TCP keepalive pour détecter les connexions mortes rapidement
+                self._heartbeat_sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
                 self._heartbeat_sock.connect((self.coord_host, COORDINATOR_PORT))
                 logging.info(f"[Volontaire {self.vol_id}] Connecté au coordinateur "
                              f"{self.coord_host}:{COORDINATOR_PORT}")
                 while self._running:
                     payload = {
-                        "mac": self.my_mac, "ip": self.my_ip,
+                        "mac_address": self.my_mac,
+                        "current_ip": self.my_ip,
                         "resources": self.resources.to_dict(),
                         "timestamp": time.time(),
                     }
@@ -347,6 +427,10 @@ class Volunteer:
             except Exception as exc:
                 logging.warning(f"[Volontaire {self.vol_id}] Heartbeat KO : {exc}. "
                                 f"Retry dans {RETRY_DELAY}s.")
+                try:
+                    self._heartbeat_sock.close()
+                except Exception:
+                    pass
                 time.sleep(RETRY_DELAY)
 
     def _open_manager_conn(self) -> socket.socket:
@@ -358,12 +442,23 @@ class Volunteer:
     def _fetch_active_volunteers(self) -> List[str]:
         try:
             s = self._open_manager_conn()
-            send_message(s, MSG_REQUEST_NEIGHBORS, {"mac": self.my_mac, "k": K_NEIGHBORS})
+            send_message(s, MSG_REQUEST_NEIGHBORS, {
+                "volunteer_mac": self.my_mac,
+                "volunteer_ip": self.my_ip,
+                "k": K_NEIGHBORS
+            })
             msg_type, data, _ = receive_message(s)
             s.close()
             if msg_type == MSG_NEIGHBORS_RESPONSE:
                 vol_list = data.get("volunteers", data.get("neighbors", []))
                 self.last_neighbors_list = vol_list
+                
+                # Mise à jour dynamique du rôle AD-PSGD
+                assigned_role = data.get("assigned_role")
+                if assigned_role and ADPSGD_ENABLED:
+                    self.adpsgd_topo.role = assigned_role
+                    logging.info(f"[AD-PSGD] Rôle dynamique réassigné par le Manager : {assigned_role}")
+
                 # Extraire toutes les adresses MAC des autres volontaires
                 all_macs = [v.get("mac_address") for v in vol_list if v.get("mac_address") and v.get("mac_address") != self.my_mac]
                 # Effectuer un peer sampling aléatoire local pour obtenir k voisins
@@ -377,9 +472,21 @@ class Volunteer:
 
     def _send_model_to_peer(self, peer_mac: str, payload: bytes, meta: Dict) -> bool:
         try:
+            # Trouver l'IP du destinataire dans la liste des voisins si possible
+            dest_ip = ""
+            for cand in self.last_neighbors_list:
+                if cand.get("mac_address") == peer_mac:
+                    dest_ip = cand.get("current_ip", "")
+                    break
+
             s = self._open_manager_conn()
             send_message(s, MSG_SEND_MODEL,
-                         {"from": self.my_mac, "to": peer_mac, "meta": meta},
+                         {
+                             "sender_mac": self.my_mac,
+                             "dest_mac": peer_mac,
+                             "dest_ip": dest_ip,
+                             "metadata": meta
+                         },
                          payload=payload)
             msg_type, _, _ = receive_message(s)
             s.close()
@@ -392,7 +499,10 @@ class Volunteer:
         states: List[Dict[str, torch.Tensor]] = []
         try:
             s = self._open_manager_conn()
-            send_message(s, MSG_POLL_MODELS, {"mac": self.my_mac})
+            send_message(s, MSG_POLL_MODELS, {
+                "volunteer_mac": self.my_mac,
+                "volunteer_ip": self.my_ip
+            })
             while True:
                 try:
                     msg_type, data, payload = receive_message(s)
@@ -488,21 +598,29 @@ class Volunteer:
         # Les premiers batches utilisent un LR réduit puis montent linéairement
         # vers LEARNING_RATE pour éviter la divergence sur poids aléatoires.
         WARMUP_BATCHES = 10
-        base_lr = LEARNING_RATE
+        base_lr = self.current_lr
+
+        initial_lr = base_lr / 10.0 if self.round_num <= 1 else base_lr
 
         optimizer = optim.SGD(self.model.parameters(),
-                              lr=base_lr / 10.0, momentum=0.9,
+                              lr=initial_lr, momentum=0.9,
                               weight_decay=1e-4)
         criterion = nn.CrossEntropyLoss()
 
-        t0 = time.time()
+        t0 = time.monotonic()
         total_loss, total_correct, total_seen, n_skipped = 0.0, 0, 0, 0
         global_batch_idx = 0   # compteur de batches global sur toutes les epochs
 
         for epoch in range(LOCAL_EPOCHS):
-            epoch_start = time.time()
+            epoch_start = time.monotonic()
+            n_batches = len(self.train_loader)
             for batch_idx, (x, y) in enumerate(self.train_loader):
-                batch_start = time.time()
+                # ── Arrêt propre si SIGTERM reçu pendant l'entraînement ────
+                if not self._running:
+                    logging.info(f"[Volontaire {self.vol_id}] Arrêt demandé pendant "
+                                 f"l'entraînement (epoch {epoch}, batch {batch_idx}/{n_batches}).")
+                    break
+                batch_start = time.monotonic()
                 x, y = x.to(self.device), y.to(self.device)
 
                 # ── Warmup LR linéaire sur les premiers batches ────────────
@@ -515,9 +633,6 @@ class Volunteer:
                         pg['lr'] = base_lr
                 global_batch_idx += 1
 
-                # ── Snapshot PAR BATCH pour rollback précis ────────────────
-                batch_snap = self._snapshot_state(self.model)
-
                 optimizer.zero_grad()
                 out = self.model(x)
                 loss = criterion(out, y)
@@ -526,22 +641,26 @@ class Volunteer:
                     n_skipped += 1
                     logging.warning(f"[Volontaire {self.vol_id}] Loss non finie "
                                     f"(epoch {epoch} batch {batch_idx}) -> skip batch.")
-                    # Remettre le modèle à l'état PRE-batch (pas au début du round)
-                    self._rollback(self.model, batch_snap)
                     continue
 
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(),
                                                max_norm=max_grad_norm)
-                optimizer.step()
 
-                if not self._is_model_finite(self.model):
+                # Vérifier si les gradients sont finis avant de faire le step
+                grads_finite = all(
+                    torch.isfinite(p.grad).all()
+                    for p in self.model.parameters()
+                    if p.grad is not None
+                )
+
+                if not grads_finite:
                     n_skipped += 1
-                    logging.warning(f"[Volontaire {self.vol_id}] NaN après step "
-                                    f"(batch {batch_idx}) -> rollback batch.")
-                    # Remettre le modèle à l'état PRE-batch (pas au début du round)
-                    self._rollback(self.model, batch_snap)
+                    logging.warning(f"[Volontaire {self.vol_id}] Gradients non finis "
+                                    f"(batch {batch_idx}) -> skip step.")
                     continue
+
+                optimizer.step()
 
                 with torch.no_grad():
                     total_loss += loss.item() * x.size(0)
@@ -550,18 +669,33 @@ class Volunteer:
 
                 # ── ModelProfiler : durée batch + loss ────────────────────
                 self.model_profiler.record_batch(
-                    batch_duration=time.time() - batch_start,
+                    batch_duration=time.monotonic() - batch_start,
                     loss_val=loss.item(),
                 )
+
+                # ── Log de progression tous les 500 batches ────────────────
+                if batch_idx > 0 and batch_idx % 500 == 0:
+                    elapsed = time.monotonic() - epoch_start
+                    eta = elapsed / batch_idx * (n_batches - batch_idx)
+                    logging.info(
+                        f"[Volontaire {self.vol_id}] Epoch {epoch+1}/{LOCAL_EPOCHS} "
+                        f"batch {batch_idx}/{n_batches} "
+                        f"loss={loss.item():.4f} acc={total_correct/max(1,total_seen):.4f} "
+                        f"elapsed={elapsed:.0f}s ETA={eta:.0f}s"
+                    )
+
+            # ── Arrêt propre entre les epochs ─────────────────────────────
+            if not self._running:
+                break
 
             # ── ModelProfiler : durée epoch + accuracy ────────────────────
             epoch_acc = total_correct / max(1, total_seen)
             self.model_profiler.record_epoch(
-                epoch_duration=time.time() - epoch_start,
+                epoch_duration=time.monotonic() - epoch_start,
                 accuracy=epoch_acc,
             )
 
-        duration = time.time() - t0
+        duration = time.monotonic() - t0
 
         if total_seen == 0:
             # Tous les batches ont été skippés -> rollback complet au début du round
@@ -592,6 +726,19 @@ class Volunteer:
                 correct += (out.argmax(dim=1) == y).sum().item()
                 total += y.size(0)
         return correct / max(1, total)
+
+    def _evaluate_loss_test(self) -> float:
+        self.model.eval()
+        total_loss, total = 0.0, 0
+        criterion = nn.CrossEntropyLoss()
+        with torch.no_grad():
+            for x, y in self.test_loader:
+                x, y = x.to(self.device), y.to(self.device)
+                out = self.model(x)
+                loss = criterion(out, y)
+                total_loss += loss.item() * y.size(0)
+                total += y.size(0)
+        return total_loss / max(1, total)
 
     # ─── Sauvegardes ────────────────────────────────────────────────────────
     def _save_selector_stats(self):
@@ -634,6 +781,7 @@ class Volunteer:
     def _run_gossip_round(self):
         self.round_num += 1
         round_start = time.time()
+        round_start_mono = time.monotonic()
         logging.info(f"[Volontaire {self.vol_id}] === Round gossip #{self.round_num} ===")
 
         # Réinitialisation des compteurs de com pour ce round
@@ -654,6 +802,24 @@ class Volunteer:
 
         # 2. Sélection adaptative des voisins
         candidates = self._fetch_active_volunteers()
+        
+        # Arrêt automatique s'il n'y a plus de pair actif pendant la durée PEER_TIMEOUT
+        if candidates:
+            self.last_active_peer_time = time.time()
+        else:
+            inactive_duration = time.time() - self.last_active_peer_time
+            logging.warning(
+                f"[Volontaire {self.vol_id}] Aucun pair actif disponible. "
+                f"Durée d'inactivité : {inactive_duration:.1f}s / limite : {self.peer_timeout}s"
+            )
+            if inactive_duration >= self.peer_timeout:
+                logging.error(
+                    f"[Volontaire {self.vol_id}] ARRÊT AUTOMATIQUE : "
+                    f"Aucun pair actif disponible pendant {inactive_duration:.1f}s (seuil de {self.peer_timeout}s dépassé). Cause : Solitude / Pas de pairs actifs."
+                )
+                self._running = False
+                return
+
         peers = self._select_neighbors(candidates)
 
         if peers:
@@ -668,12 +834,13 @@ class Volunteer:
                          f"{orig_size}->{n_bytes} octets (ratio={ratio:.2f}x)")
 
             for peer_mac in peers:
-                t0 = time.time()
+                t0_mono = time.monotonic()
+                t0_wall = time.time()
                 # On ajoute le timestamp de début d'envoi dans les métadonnées
                 peer_meta = dict(meta or {})
-                peer_meta["send_ts_start"] = t0
+                peer_meta["send_ts_start"] = t0_wall
                 success = self._send_model_to_peer(peer_mac, compressed_bytes, peer_meta)
-                duration = time.time() - t0
+                duration = time.monotonic() - t0_mono
                 self._record_transfer_reward(peer_mac, n_bytes, duration, success)
                 
                 if success:
@@ -689,8 +856,8 @@ class Volunteer:
                         "dest_ip": peer_ip,
                         "bytes": n_bytes,
                         "send_duration_s": duration,
-                        "send_ts_start": t0,
-                        "send_ts_end": t0 + duration
+                        "send_ts_start": t0_wall,
+                        "send_ts_end": t0_wall + duration
                     })
 
                 # ── ModelProfiler : enregistre le coût de communication ──
@@ -704,13 +871,133 @@ class Volunteer:
         # 3. Réception + filtrage + agrégation
         received_states = self._poll_received_models()
         received_states = self._filter_received_states(received_states)
-        if received_states:
-            average_models(self.model, received_states, local_weight=0.5)
-            logging.info(f"[Volontaire {self.vol_id}] FedAvg : "
-                         f"{len(received_states)} modèles agrégés.")
+
+        if ADPSGD_ENABLED:
+            # ── AD-PSGD averaging step (Algorithme 1, lignes 5-6) ──────────
+            # Capture du snapshot x̂ AVANT averaging (= lecture stale)
+            x_hat = self.adpsgd_stale_reader.capture(self.model, self.round_num)
+            self.adpsgd_stats.reset()
+
+            if received_states:
+                # On prend le PREMIER modèle reçu comme voisin i' (averaging pairwise)
+                # Conforme à l'article : x_i ← (x_i + x_i') / 2
+                neighbor_state = received_states[0]
+
+                # Staleness avant averaging
+                staleness_before = self.adpsgd_stale_reader.compute_staleness(self.model)
+
+                # Si rôle passif, appliquer le facteur de saut adaptatif
+                is_passive = (self.adpsgd_topo.role == BipartiteTopology.ROLE_PASSIVE)
+                should_skip = False
+                if is_passive:
+                    # Ajuster le skip factor en fonction de la staleness mesurée
+                    threshold = ADPSGD_STALENESS_THRESHOLD
+                    max_skip = ADPSGD_SKIP_FACTOR_MAX
+                    
+                    if staleness_before > threshold:
+                        # Grande staleness -> rafraîchir le modèle -> réduire le skip factor
+                        old_factor = self.adpsgd_skip_factor
+                        self.adpsgd_skip_factor = max(1, self.adpsgd_skip_factor - 1)
+                        if old_factor != self.adpsgd_skip_factor:
+                            logging.info(f"[AD-PSGD] Staleness élevée ({staleness_before:.6f} > {threshold}) : réduction du skip factor à {self.adpsgd_skip_factor}")
+                    else:
+                        # Petite staleness -> modèle frais -> augmenter le skip factor
+                        old_factor = self.adpsgd_skip_factor
+                        self.adpsgd_skip_factor = min(max_skip, self.adpsgd_skip_factor + 1)
+                        if old_factor != self.adpsgd_skip_factor:
+                            logging.info(f"[AD-PSGD] Staleness faible ({staleness_before:.6f} <= {threshold}) : augmentation du skip factor à {self.adpsgd_skip_factor}")
+                    
+                    # Décider si on saute l'averaging
+                    self.adpsgd_skip_counter += 1
+                    self.adpsgd_stats.skip_factor = self.adpsgd_skip_factor
+
+                    if self.adpsgd_skip_counter < self.adpsgd_skip_factor:
+                        should_skip = True
+                        logging.info(f"[AD-PSGD] Rôle passif : averaging sauté par politique de saut (compteur={self.adpsgd_skip_counter}/{self.adpsgd_skip_factor})")
+                    else:
+                        self.adpsgd_skip_counter = 0
+
+                if should_skip:
+                    self.adpsgd_stats.record_skip()
+                    logging.info(f"[Volontaire {self.vol_id}] [AD-PSGD] Averaging sauté par saut adaptatif (staleness={staleness_before:.6f}, factor={self.adpsgd_skip_factor}).")
+                else:
+                    # Averaging symétrique AD-PSGD
+                    adpsgd_average(self.model, neighbor_state, alpha=ADPSGD_ALPHA)
+
+                    # Staleness après averaging (mesure l'impact de l'averaging)
+                    staleness_after = self.adpsgd_stale_reader.compute_staleness(self.model)
+
+                    # Identifier le voisin (par index de topologie ou par défaut)
+                    sampled_neighbor = self.adpsgd_topo.sample_neighbor()
+
+                    self.adpsgd_stats.record_averaging(
+                        neighbor_id=sampled_neighbor if sampled_neighbor is not None else -1,
+                        alpha=ADPSGD_ALPHA,
+                        staleness=staleness_after,
+                    )
+                    logging.info(
+                        f"[Volontaire {self.vol_id}] [AD-PSGD] Averaging avec voisin "
+                        f"(stale_before={staleness_before:.4f} stale_after={staleness_after:.4f} "
+                        f"alpha={ADPSGD_ALPHA}). {len(received_states)} modèle(s) reçu(s)."
+                    )
+
+                    # Si plusieurs modèles reçus, les incorporer avec FedAvg résiduel
+                    if len(received_states) > 1:
+                        extra = self._filter_received_states(received_states[1:])
+                        if extra:
+                            average_models(self.model, extra, local_weight=0.7)
+                            logging.info(
+                                f"[Volontaire {self.vol_id}] [AD-PSGD] {len(extra)} modèle(s) "
+                                f"supplémentaire(s) incorporé(s) via FedAvg résiduel."
+                            )
+            else:
+                self.adpsgd_stats.record_skip()
+                logging.info(
+                    f"[Volontaire {self.vol_id}] [AD-PSGD] Aucun modèle reçu → "
+                    f"averaging sauté (role={self.adpsgd_topo.role})."
+                )
+        else:
+            # Comportement Gossip classique (FedAvg)
+            if received_states:
+                average_models(self.model, received_states, local_weight=0.5)
+                logging.info(f"[Volontaire {self.vol_id}] FedAvg : "
+                             f"{len(received_states)} modèles agrégés.")
 
         # 4. Évaluation
         test_acc = self._evaluate_test()
+
+        # ── Ajustement adaptatif du Learning Rate (AdaStair / AdaLoss) ─────
+        if ADAPTIVE_LR_METHOD == "adastair":
+            if self.round_num in self.rstair_rounds:
+                self.current_lr = self.current_lr / 2.0
+                logging.info(f"[AdaStair] Round {self.round_num} atteint. "
+                             f"Le learning rate est divisé par 2. Nouveau LR: {self.current_lr:.6f}")
+        elif ADAPTIVE_LR_METHOD == "adaloss":
+            patience = self.rloss_patience[self.adaloss_alpha]
+            loss_t = self._evaluate_loss_test()
+            
+            # Si c'est le premier round avec AdaLoss, initialiser self.adaloss_last_loss
+            if self.adaloss_last_loss == float('inf'):
+                self.adaloss_last_loss = loss_t
+                logging.info(f"[AdaLoss] Initialisation de la loss de référence : {loss_t:.4f}")
+            else:
+                if loss_t >= self.adaloss_last_loss:
+                    self.adaloss_counter += 1
+                    logging.info(f"[AdaLoss] La loss n'a pas diminué ({loss_t:.4f} >= {self.adaloss_last_loss:.4f}). "
+                                 f"Patience: {self.adaloss_counter}/{patience}")
+                else:
+                    logging.info(f"[AdaLoss] La loss a diminué ({loss_t:.4f} < {self.adaloss_last_loss:.4f}). "
+                                 f"Réinitialisation du compteur de patience.")
+                    self.adaloss_counter = 0
+                    self.adaloss_last_loss = loss_t
+                
+                if self.adaloss_counter >= patience:
+                    self.current_lr = self.current_lr / 2.0
+                    self.adaloss_alpha = min(self.adaloss_alpha + 1, len(self.rloss_patience) - 1)
+                    self.adaloss_counter = 0
+                    self.adaloss_last_loss = loss_t
+                    logging.info(f"[AdaLoss] Patience dépassée ! Le learning rate est divisé par 2. "
+                                 f"Nouveau LR: {self.current_lr:.6f}. Nouvelle patience index={self.adaloss_alpha} ({self.rloss_patience[self.adaloss_alpha]} rounds)")
 
         # PROFILAGE AVANCÉ : IPC + arrêt monitoring
         self.adv_profiler.measure_ipc(duration_s=1.5)
@@ -726,7 +1013,7 @@ class Volunteer:
         throttle_str = f"{throttle*100:.1f}%" if throttle is not None else "N/A"
         ipc = adv_metrics.get("ipc")
         ipc_str = f"{ipc:.2f}" if ipc is not None else "N/A"
-        round_dur = time.time() - round_start
+        round_dur = time.monotonic() - round_start_mono
         logging.info(
             f"[Volontaire {self.vol_id}] [PROFILE] "
             f"RSS_peak={adv_metrics.get('rss_peak_kb', 0)/1024:.1f}MB "
@@ -791,6 +1078,9 @@ class Volunteer:
 
             orig_size = model_parameter_bytes(self.model)
 
+            # Métriques AD-PSGD à inclure dans les stats
+            adpsgd_metrics = self.adpsgd_stats.to_dict() if ADPSGD_ENABLED else {}
+
             self._stats.record(
                 round_num=self.round_num,
                 train_loss=train_loss,
@@ -801,6 +1091,7 @@ class Volunteer:
                 bytes_received=self.round_bytes_received,
                 n_models_received=self.round_n_models_received,
                 compression_ratio=ratio,
+                learning_rate=self.current_lr,
                 
                 neighbors_info=neighbors_info,
                 sent_details=round_sent_details,
@@ -836,7 +1127,8 @@ class Volunteer:
                 throttle_ratio=adv_metrics.get("throttle_ratio", 0.0),
                 ete_seconds=adv_metrics.get("ete_seconds", 0.0),
                 n_samples=adv_metrics.get("n_samples", 0),
-                ipc=adv_metrics.get("ipc", None)
+                ipc=adv_metrics.get("ipc", None),
+                adpsgd=adpsgd_metrics,
             )
 
             # Sauvegarde locale et envoi au manager

@@ -27,6 +27,7 @@ class RoundStats:
     bytes_received:     int
     n_models_received:  int
     compression_ratio:  float          # original_bytes / compressed_bytes
+    learning_rate:      float = 0.0
     timestamp:          float = field(default_factory=time.time)
     # New traceability fields
     neighbors_info:     List[dict] = field(default_factory=list)  # voisins renvoyés par le manager (ressources + score)
@@ -63,6 +64,8 @@ class RoundStats:
     ete_seconds:        float = 0.0
     n_samples:          int = 0
     ipc:                float = None
+    # AD-PSGD specific metrics (empty dict when AD-PSGD is disabled)
+    adpsgd:             dict = field(default_factory=dict)
 
 
 class StatsTracker:
@@ -85,6 +88,7 @@ class StatsTracker:
             self._total_recv += st.bytes_received
         logging.info(
             f"[Stats] Round {st.round_num:3d} | "
+            f"lr={st.learning_rate:.6f}  "
             f"loss={st.train_loss:.4f}  train_acc={st.train_acc:.3f}  "
             f"test_acc={st.test_acc:.3f}  "
             f"↑{st.bytes_sent/1024:.0f}KB ↓{st.bytes_received/1024:.0f}KB  "

@@ -20,6 +20,7 @@ Partitions
 import logging
 import math
 import os
+from pathlib import Path
 from typing import Tuple
 
 import numpy as np
@@ -51,6 +52,52 @@ DATASET_TRAIN_SIZE = {
 }
 
 
+def resolve_data_dir(data_dir: str) -> str:
+    """Résout un chemin de données de façon robuste depuis n'importe quel cwd."""
+    path = Path(data_dir).expanduser()
+    if path.is_absolute():
+        return str(path)
+
+    project_root = Path(__file__).resolve().parents[1]
+    candidate = (project_root / path).resolve()
+    if candidate.exists():
+        return str(candidate)
+
+    cwd_candidate = (Path.cwd() / path).resolve()
+    if cwd_candidate.exists():
+        return str(cwd_candidate)
+
+    return str(candidate)
+
+
+def _dataset_files_present(data_dir: str, dataset_name: str) -> bool:
+    ds = dataset_name.lower().strip()
+    if ds == "cifar10":
+        return os.path.isdir(os.path.join(data_dir, "cifar-10-batches-py"))
+    if ds == "cifar100":
+        return os.path.isdir(os.path.join(data_dir, "cifar-100-python"))
+    if ds == "imagenet":
+        train_path = os.path.join(data_dir, "imagenet", "train")
+        val_path = os.path.join(data_dir, "imagenet", "val")
+        return os.path.isdir(train_path) and os.path.isdir(val_path)
+    return False
+
+
+def _try_load_dataset_or_raise(data_dir: str, dataset_name: str):
+    allow_download = os.getenv("ALLOW_DATASET_DOWNLOAD", "0").lower() in {"1", "true", "yes", "on"}
+    if _dataset_files_present(data_dir, dataset_name):
+        return False
+
+    if allow_download:
+        logging.info("[Dataset] Aucun jeu de données local détecté ; téléchargement autorisé.")
+        return True
+
+    raise FileNotFoundError(
+        f"Données locales introuvables pour '{dataset_name}' dans '{data_dir}'. "
+        "Placez les fichiers du dataset dans ce dossier ou définissez ALLOW_DATASET_DOWNLOAD=1."
+    )
+
+
 def load_dataset(dataset: str,
                  data_dir: str,
                  volunteer_id: int,
@@ -72,17 +119,20 @@ def load_dataset(dataset: str,
     Returns:
         (train_loader, test_loader)
     """
-    os.makedirs(data_dir, exist_ok=True)
+    resolved_data_dir = resolve_data_dir(data_dir)
+    os.makedirs(resolved_data_dir, exist_ok=True)
     ds = dataset.lower().strip()
 
     if ds == "cifar10":
-        train_ds, test_ds = _load_cifar10(data_dir)
+        allow_download = _try_load_dataset_or_raise(resolved_data_dir, ds)
+        train_ds, test_ds = _load_cifar10(resolved_data_dir, download=allow_download)
 
     elif ds == "cifar100":
-        train_ds, test_ds = _load_cifar100(data_dir)
+        allow_download = _try_load_dataset_or_raise(resolved_data_dir, ds)
+        train_ds, test_ds = _load_cifar100(resolved_data_dir, download=allow_download)
 
     elif ds == "imagenet":
-        train_ds, test_ds = _load_imagenet(data_dir)
+        train_ds, test_ds = _load_imagenet(resolved_data_dir)
 
     else:
         raise ValueError(
@@ -130,10 +180,9 @@ def load_dataset(dataset: str,
 # ─── Chargement par dataset ──────────────────────────────────────────────────
 
 def _cifar_train_transforms() -> T.Compose:
-    """Transformations d'augmentation entraînement pour CIFAR (32→224 pour ResNet-50)."""
+    """Transformations d'augmentation entraînement pour CIFAR (32x32)."""
     return T.Compose([
-        T.Resize(256),                          # 32×32 → 256×256
-        T.RandomCrop(_INPUT_SIZE),              # crop 224×224
+        T.RandomCrop(32, padding=4),
         T.RandomHorizontalFlip(),
         T.ToTensor(),
         T.Normalize(_IMAGENET_MEAN, _IMAGENET_STD),
@@ -141,34 +190,32 @@ def _cifar_train_transforms() -> T.Compose:
 
 
 def _cifar_test_transforms() -> T.Compose:
-    """Transformations test pour CIFAR (32→224 pour ResNet-50, sans augmentation)."""
+    """Transformations test pour CIFAR (32x32, sans augmentation)."""
     return T.Compose([
-        T.Resize(256),                          # 32×32 → 256×256
-        T.CenterCrop(_INPUT_SIZE),              # crop central 224×224
         T.ToTensor(),
         T.Normalize(_IMAGENET_MEAN, _IMAGENET_STD),
     ])
 
 
-def _load_cifar10(data_dir: str):
+def _load_cifar10(data_dir: str, download: bool = False):
     train_ds = torchvision.datasets.CIFAR10(
-        data_dir, train=True,  download=True,
+        data_dir, train=True, download=download,
         transform=_cifar_train_transforms(),
     )
     test_ds = torchvision.datasets.CIFAR10(
-        data_dir, train=False, download=True,
+        data_dir, train=False, download=download,
         transform=_cifar_test_transforms(),
     )
     return train_ds, test_ds
 
 
-def _load_cifar100(data_dir: str):
+def _load_cifar100(data_dir: str, download: bool = False):
     train_ds = torchvision.datasets.CIFAR100(
-        data_dir, train=True,  download=True,
+        data_dir, train=True, download=download,
         transform=_cifar_train_transforms(),
     )
     test_ds = torchvision.datasets.CIFAR100(
-        data_dir, train=False, download=True,
+        data_dir, train=False, download=download,
         transform=_cifar_test_transforms(),
     )
     return train_ds, test_ds
@@ -243,8 +290,11 @@ def _non_iid_partition(targets: np.ndarray, vol_id: int, n: int):
 
 
 def get_input_size(dataset: str) -> tuple:
-    """Retourne (C, H, W) pour le dataset donné (tous en 224×224 après resize)."""
-    return (3, _INPUT_SIZE, _INPUT_SIZE)
+    """Retourne (C, H, W) pour le dataset donné."""
+    ds = dataset.lower().strip()
+    if ds in ("cifar10", "cifar100"):
+        return (3, 32, 32)
+    return (3, 224, 224)
 
 
 def get_num_classes(dataset: str) -> int:

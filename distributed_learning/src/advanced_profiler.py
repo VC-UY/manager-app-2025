@@ -69,6 +69,8 @@ class AdvancedProfiler:
         self.cpu_max_mhz: float = 0.0
         self.start_ts: float = 0.0
         self.stop_ts: float = 0.0
+        self.start_ts_mono: float = 0.0
+        self.stop_ts_mono: float = 0.0
 
         # Echantillons (timestamp, rss_kb, pss_kb, uss_kb, cpu_pct, freq_mhz)
         self._samples: List[Tuple[float, int, int, int, float, float]] = []
@@ -249,7 +251,9 @@ class AdvancedProfiler:
             self._samples.clear()
             self._ipc = None
             self.start_ts = time.time()
+            self.start_ts_mono = time.monotonic()
             self.stop_ts = 0.0
+            self.stop_ts_mono = 0.0
             self._monitoring = True
 
         def _loop():
@@ -262,7 +266,7 @@ class AdvancedProfiler:
 
             while self._monitoring:
                 try:
-                    ts = time.time()
+                    ts = time.monotonic()
                     status = self._read_proc_status(self.pid)
                     rss = status.get("VmRSS", 0)
                     if rss == 0 and self._ps_proc is not None:
@@ -307,6 +311,7 @@ class AdvancedProfiler:
         if self._monitor_thread is not None:
             self._monitor_thread.join(timeout=2.0)
         self.stop_ts = time.time()
+        self.stop_ts_mono = time.monotonic()
 
         return self._compute_metrics()
 
@@ -387,7 +392,7 @@ class AdvancedProfiler:
             freq_avg = 0.0
             throttle_ratio = -1.0   # sentinelle : non mesurable
 
-        ete = self.stop_ts - self.start_ts if self.stop_ts > 0 else 0.0
+        ete = self.stop_ts_mono - self.start_ts_mono if self.stop_ts_mono > 0 else 0.0
 
         # Downsampling profil (≤ 100 points pour JSON)
         ts_origin = samples[0][0]

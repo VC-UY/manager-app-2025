@@ -64,6 +64,8 @@ export SOCKET_TIMEOUT="${SOCKET_TIMEOUT:-60}"
 
 # ─── Create results dir ─────────────────────────────────────────────────────
 mkdir -p "$STATS_DIR"
+chown volunteer:volunteer "$STATS_DIR" 2>/dev/null || true
+chmod a+rwx "$STATS_DIR" 2>/dev/null || true
 
 echo "=============================================="
 echo "  Distributed Learning Volunteer $VOLUNTEER_ID"

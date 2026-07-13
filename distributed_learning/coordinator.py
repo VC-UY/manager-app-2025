@@ -52,6 +52,7 @@ logging.basicConfig(
 class Coordinator:
     def __init__(self):
         self._volunteers: dict[str, VolunteerNode] = {}   # mac → VolunteerNode
+        self._active_connections: dict[str, socket.socket] = {} # mac → socket
         self._lock     = threading.Lock()
         self._running  = True
 
@@ -103,10 +104,6 @@ class Coordinator:
 
     def _handle_volunteer(self, conn: socket.socket, ip: str):
         # Le volontaire déclare son MAC et ses ressources dans le heartbeat initial
-        # FIX BUG 1 : mac_address doit être mis à jour dès le premier heartbeat valide.
-        # Dans la version originale, `mac_address` restait None car on utilisait
-        # la variable locale `mac` dans la boucle sans jamais assigner mac_address.
-        # Résultat : le bloc `finally` ne retirait JAMAIS le volontaire du dictionnaire.
         mac_address = None
         node = None
 
@@ -121,12 +118,22 @@ class Coordinator:
                         logging.warning(f"Heartbeat sans MAC depuis {ip}, ignoré")
                         continue
 
-                    # ✅ FIX : assigner mac_address dès qu'on a un MAC valide
                     if mac_address is None:
                         mac_address = mac
 
                     # Créer ou mettre à jour le volontaire
                     with self._lock:
+                        # Si le MAC a déjà une connexion active différente, on la ferme
+                        if mac in self._active_connections and self._active_connections[mac] is not conn:
+                            old_conn = self._active_connections[mac]
+                            try:
+                                old_conn.close()
+                            except Exception as e:
+                                logging.warning(f"Erreur fermeture ancienne connexion pour {mac}: {e}")
+                            logging.info(f"Ancienne connexion fermée pour le volontaire {mac} suite à une reconnexion.")
+                        
+                        self._active_connections[mac] = conn
+
                         if mac not in self._volunteers:
                             # Nouveau volontaire
                             try:
@@ -168,18 +175,23 @@ class Coordinator:
         except Exception as exc:
             logging.warning(f"Erreur volontaire {mac_address or ip} : {exc}")
         finally:
-            # ✅ FIX : mac_address est maintenant correctement assigné,
-            # donc le volontaire sera bien retiré du dictionnaire à la déconnexion.
             if mac_address:
                 with self._lock:
-                    self._volunteers.pop(mac_address, None)
-                logging.info(
-                    f"Volontaire retiré : {mac_address}  "
-                    f"(total : {len(self._volunteers)})"
-                )
+                    if self._active_connections.get(mac_address) is conn:
+                        self._active_connections.pop(mac_address, None)
+                        self._volunteers.pop(mac_address, None)
+                        logging.info(
+                            f"Volontaire retiré : {mac_address}  "
+                            f"(total : {len(self._volunteers)})"
+                        )
+                    else:
+                        logging.info(f"Ancienne connexion nettoyée pour {mac_address} sans retirer le nœud actif.")
             else:
                 logging.info(f"Volontaire déconnecté {ip} (aucun MAC enregistré)")
-            conn.close()
+            try:
+                conn.close()
+            except Exception:
+                pass
 
     # ─── Nettoyage ────────────────────────────────────────────────────────────
 
@@ -192,6 +204,12 @@ class Coordinator:
                          if now - node.last_heartbeat > HEARTBEAT_TIMEOUT]
                 for mac in stale:
                     del self._volunteers[mac]
+                    conn = self._active_connections.pop(mac, None)
+                    if conn:
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
                     logging.warning(f"Volontaire expiré (timeout) : {mac}")
 
     # ─── Diffusion vers le Manager ────────────────────────────────────────────

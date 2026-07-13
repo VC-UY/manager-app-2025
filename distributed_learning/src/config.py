@@ -29,15 +29,54 @@ K_NEIGHBORS = int(os.getenv("K_NEIGHBORS", "3"))
 # GOSSIP — MODÈLES
 # =============================================================================
 GOSSIP_INTERVAL = int(os.getenv("GOSSIP_INTERVAL", "60"))      # secondes
+if GOSSIP_INTERVAL <= 0:
+    logging.warning("GOSSIP_INTERVAL invalide (%s), valeur par défaut 60s utilisée.", os.getenv("GOSSIP_INTERVAL", "60"))
+    GOSSIP_INTERVAL = 60
+elif GOSSIP_INTERVAL > 600:
+    logging.warning("GOSSIP_INTERVAL trop grand (%ss), il est ramené à 60s pour éviter un blocage de l'expérience.", GOSSIP_INTERVAL)
+    GOSSIP_INTERVAL = 60
 GOSSIP_FANOUT = int(os.getenv("GOSSIP_FANOUT", "1"))           # nombre de pairs
 
 # =============================================================================
 # APPRENTISSAGE — LOCAL
 # =============================================================================
-LOCAL_EPOCHS = int(os.getenv("LOCAL_EPOCHS", "3"))
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", "8"))
+LOCAL_EPOCHS = int(os.getenv("LOCAL_EPOCHS", "1"))
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", "64"))
 LEARNING_RATE = float(os.getenv("LEARNING_RATE", "0.001"))
-MAX_ROUNDS = int(os.getenv("MAX_ROUNDS", "15"))
+MAX_ROUNDS = int(os.getenv("MAX_ROUNDS", "10"))
+
+# Méthode d'ajustement adaptatif du LR (none | adastair | adaloss)
+ADAPTIVE_LR_METHOD = os.getenv("ADAPTIVE_LR_METHOD", "adaloss").lower().strip()
+
+# =============================================================================
+# AD-PSGD — Asynchronous Decentralized Parallel Stochastic Gradient Descent
+# Lian et al. (2018) https://arxiv.org/abs/1710.06952
+# =============================================================================
+
+# Active ou non (si False : comportement Gossip classique inchangé)
+ADPSGD_ENABLED = os.getenv("ADPSGD_ENABLED", "true").lower().strip() in ("1", "true", "yes")
+
+# Topologie du ring de communication
+#   ring          : voisins immédiats seulement (simple, O(n) dissémination)
+#   exponential   : sauts exponentiels 2^k+1 (recommandé, O(log n) dissémination)
+ADPSGD_TOPOLOGY = os.getenv("ADPSGD_TOPOLOGY", "exponential").lower().strip()
+
+# Rôle dans la partition bipartie (pour éviter les deadlocks)
+#   auto   : déduit de VOLUNTEER_ID (pair=active, impair=passive)
+#   active : ce nœud initie toujours l'averaging
+#   passive: ce nœud répond uniquement quand un actif le contacte
+ADPSGD_ROLE = os.getenv("ADPSGD_ROLE", "auto").lower().strip()
+
+# Poids de l'averaging symétrique : x_i ← alpha * x_i + (1 - alpha) * x_j
+# L'article utilise alpha = 0.5 (moyenne exacte, doubly stochastic)
+ADPSGD_ALPHA = float(os.getenv("ADPSGD_ALPHA", "0.5"))
+if not (0.0 < ADPSGD_ALPHA < 1.0):
+    logging.warning(f"ADPSGD_ALPHA invalide ({ADPSGD_ALPHA}), remis à 0.5.")
+    ADPSGD_ALPHA = 0.5
+
+# Facteur de saut adaptatif pour le rôle passif
+ADPSGD_SKIP_FACTOR_MAX = int(os.getenv("ADPSGD_SKIP_FACTOR_MAX", "5"))
+ADPSGD_STALENESS_THRESHOLD = float(os.getenv("ADPSGD_STALENESS_THRESHOLD", "0.05"))
 
 # =============================================================================
 # MODÈLE
@@ -57,12 +96,12 @@ _default_num_classes = _NUM_CLASSES_MAP.get(DATASET, 10)
 NUM_CLASSES = int(os.getenv("NUM_CLASSES", str(_default_num_classes)))
 
 DATA_PARTITION = os.getenv("DATA_PARTITION", "iid")       # iid, non-iid
-N_VOLUNTEERS = int(os.getenv("N_VOLUNTEERS", "5"))
+N_VOLUNTEERS = int(os.getenv("N_VOLUNTEERS", "2"))
 
 # =============================================================================
 # COMPRESSION
 # =============================================================================
-COMPRESSION = os.getenv("COMPRESSION", "quantization").lower()        # none, quantization, sparsification
+COMPRESSION = os.getenv("COMPRESSION", "jointsq").lower()        # none, quantization, sparsification
 QUANTIZATION_BITS = int(os.getenv("QUANTIZATION_BITS", "8"))
 SPARSIFICATION_RATIO = float(os.getenv("SPARSIFICATION_RATIO", "0.9"))
 
@@ -71,6 +110,9 @@ SPARSIFICATION_RATIO = float(os.getenv("SPARSIFICATION_RATIO", "0.9"))
 # =============================================================================
 HEARTBEAT_INTERVAL = int(os.getenv("HEARTBEAT_INTERVAL", "10"))      # secondes
 HEARTBEAT_TIMEOUT = int(os.getenv("HEARTBEAT_TIMEOUT", "35"))        # secondes
+
+# Seuil d'inactivité (sans pair) pour l'arrêt automatique
+PEER_TIMEOUT = int(os.getenv("PEER_TIMEOUT", "60"))                  # secondes
 
 # =============================================================================
 # SOCKET — RÉSEAU

@@ -44,16 +44,23 @@ services:
       - K_NEIGHBORS=${K_NEIGHBORS:-3}
       - GOSSIP_INTERVAL=${GOSSIP_INTERVAL:-60}
       - GOSSIP_FANOUT=${GOSSIP_FANOUT:-1}
-      - LOCAL_EPOCHS=${LOCAL_EPOCHS:-3}
+      - LOCAL_EPOCHS=${LOCAL_EPOCHS:-1}
       - MODEL_NAME=${MODEL_NAME:-resnet18}
       - BATCH_SIZE=${BATCH_SIZE:-32}
       - LEARNING_RATE=${LEARNING_RATE:-0.001}
       - NUM_CLASSES=${NUM_CLASSES:-10}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - STATS_DIR=${STATS_DIR:-/app/results}
-      - HEARTBEAT_INTERVAL=${HEARTBEAT_INTERVAL:-10}
-      - HEARTBEAT_TIMEOUT=${HEARTBEAT_TIMEOUT:-35}
-      - SOCKET_TIMEOUT=${SOCKET_TIMEOUT:-60}
+      - HEARTBEAT_INTERVAL=${HEARTBEAT_INTERVAL:-30}
+      - HEARTBEAT_TIMEOUT=${HEARTBEAT_TIMEOUT:-90}
+      - SOCKET_TIMEOUT=${SOCKET_TIMEOUT:-300}
+      - ALLOW_DATASET_DOWNLOAD=${ALLOW_DATASET_DOWNLOAD:-0}
+
+      # AD-PSGD
+      - ADPSGD_ENABLED=${ADPSGD_ENABLED:-true}
+      - ADPSGD_TOPOLOGY=${ADPSGD_TOPOLOGY:-exponential}
+      - ADPSGD_ROLE=${ADPSGD_ROLE:-auto}
+      - ADPSGD_ALPHA=${ADPSGD_ALPHA:-0.5}
 
       # OPTIONAL — hardware hints (advertised to coordinator)
       - CPU_CORES=${CPU_CORES:-}
@@ -63,8 +70,7 @@ services:
     # Volumes
     # Persist results outside the container
     volumes:
-      - ./results:/app/results
-      - ./data:/app/data
+      - ./results:/app/results:rw
 
     # Network
     # Use host network so the volunteer can reach coordinator/manager
@@ -73,6 +79,9 @@ services:
 
     # Shared memory size for PyTorch DataLoader (default is 64MB, which is too small)
     shm_size: '2gb'
+
+    # Give the volunteer time to finish current batch + save stats before SIGKILL
+    stop_grace_period: 30s
 
     # Disable auto-restart so container stops when training rounds limit is reached
     restart: "no"

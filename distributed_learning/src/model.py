@@ -9,10 +9,9 @@ Modèles disponibles
   - resnet152  : ResNet-152  (~60 M paramètres)
   - vgg19      : VGG-19      (~143 M paramètres)
 
-Tous ces modèles acceptent des images 3×224×224.
-Les datasets CIFAR-10 et CIFAR-100 (3×32×32) sont redimensionnés à 224×224
-directement dans les transformations de dataset.py.
-ImageNet est déjà en 224×224.
+Tous ces modèles acceptent des images 3×224×224 pour ImageNet.
+Pour CIFAR-10 et CIFAR-100 (3×32×32), conv1 et maxpool sont adaptés
+pour travailler directement en 32×32 (pas de redimensionnement).
 
 Utilisation :
     from src.model import create_model, model_parameter_bytes
@@ -48,21 +47,35 @@ def create_model(model_name: str = "resnet18",
         ValueError : si model_name n'est pas supporté.
     """
     name = model_name.lower().strip()
+    from src.config import DATASET
+    is_cifar = DATASET.lower().strip() in ("cifar10", "cifar100")
 
     if name == "resnet18":
         model = tv_models.resnet18(weights=None)
+        if is_cifar:
+            model.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+            model.maxpool = nn.Identity()
         model.fc = nn.Linear(model.fc.in_features, num_classes)
 
     elif name == "resnet50":
         model = tv_models.resnet50(weights=None)
+        if is_cifar:
+            model.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+            model.maxpool = nn.Identity()
         model.fc = nn.Linear(model.fc.in_features, num_classes)
 
     elif name == "resnet101":
         model = tv_models.resnet101(weights=None)
+        if is_cifar:
+            model.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+            model.maxpool = nn.Identity()
         model.fc = nn.Linear(model.fc.in_features, num_classes)
 
     elif name == "resnet152":
         model = tv_models.resnet152(weights=None)
+        if is_cifar:
+            model.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+            model.maxpool = nn.Identity()
         model.fc = nn.Linear(model.fc.in_features, num_classes)
 
     elif name == "vgg19":

@@ -20,6 +20,7 @@ Méthodes disponibles :
 
 import io
 import logging
+import math
 from typing import Dict, Tuple, List
 
 import numpy as np
@@ -227,6 +228,223 @@ def unpack_model(model: nn.Module, data: bytes, meta: Dict) -> None:
     model.load_state_dict(state)
 
 
+# ─── JointSQ ──────────────────────────────────────────────────────────────────
+def mckp_greedy(tensor: torch.Tensor, max_bit: int) -> torch.Tensor:
+    """
+    Algorithme MCKP-Greedy pour allouer le budget de bits sur les composants du tenseur.
+    Assigne 0, 2, 4 ou 8 bits à chaque élément.
+    """
+    device = tensor.device
+    numel = tensor.numel()
+    if numel == 0:
+        return torch.zeros_like(tensor, dtype=torch.uint8)
+
+    squared = tensor.pow(2)
+
+    # Densités de profit incrémentales pour les transitions :
+    # 0 -> 2 bits (poids +2) : coeff = 0.46875
+    # 2 -> 4 bits (poids +2) : coeff = 0.029296875
+    # 4 -> 8 bits (poids +4) : coeff = 0.0009715625
+    d1 = 0.46875 * squared
+    d2 = 0.029296875 * squared
+    d3 = 0.0009715625 * squared
+
+    all_densities = torch.cat([d1, d2, d3])
+    all_weights = torch.cat([
+        torch.full_like(d1, 2, dtype=torch.int32),
+        torch.full_like(d2, 2, dtype=torch.int32),
+        torch.full_like(d3, 4, dtype=torch.int32)
+    ])
+    all_types = torch.cat([
+        torch.zeros_like(d1, dtype=torch.uint8),  # 0 -> 2
+        torch.ones_like(d2, dtype=torch.uint8),   # 2 -> 4
+        torch.full_like(d3, 2, dtype=torch.uint8)  # 4 -> 8
+    ])
+    orig_indices = torch.cat([
+        torch.arange(numel, device=device),
+        torch.arange(numel, device=device),
+        torch.arange(numel, device=device)
+    ])
+
+    # Tri par densité décroissante
+    sorted_densities, sorted_idx = torch.sort(all_densities, descending=True)
+    sorted_weights = all_weights[sorted_idx]
+    sorted_types = all_types[sorted_idx]
+    sorted_orig_indices = orig_indices[sorted_idx]
+
+    cum_weights = torch.cumsum(sorted_weights, dim=0)
+    idx = torch.searchsorted(cum_weights, max_bit, right=True)
+    idx = int(idx.item())
+
+    selected_orig_indices = sorted_orig_indices[:idx]
+    selected_types = sorted_types[:idx]
+
+    mask = torch.zeros(numel, dtype=torch.uint8, device=device)
+    
+    # Assigner les bitwidths correspondants
+    mask[selected_orig_indices[selected_types == 0]] = 2
+    mask[selected_orig_indices[selected_types == 1]] = 4
+    mask[selected_orig_indices[selected_types == 2]] = 8
+
+    return mask
+
+
+def stochastic_quantize(x: torch.Tensor, n: int) -> Tuple[torch.Tensor, float]:
+    """
+    Quantifie x stochastiquement sur 2n+1 niveaux dans [-1, 1], multiplié par la norme inf.
+    Retourne (q, norm) où q est un tenseur int8 contenant les niveaux quantifiés dans [-n, n].
+    """
+    x = x.float()
+    norm = float(x.abs().max().item())
+    if norm == 0.0:
+        return torch.zeros_like(x, dtype=torch.int8), 0.0
+
+    sgn = torch.sign(x)
+    sgn[sgn == 0] = 1.0
+    
+    p = x.abs() / norm
+    renormalize_p = p * n
+    floor_p = torch.floor(renormalize_p)
+    compare = torch.rand_like(floor_p)
+    final_p = renormalize_p - floor_p
+    margin = (compare < final_p).float()
+    
+    q = sgn * (floor_p + margin)
+    q = torch.clamp(q, -128, 127).to(torch.int8)
+    return q, norm
+
+
+def jointsq_compress_model(model: nn.Module, ratio: float = 0.05) -> Tuple[bytes, Dict]:
+    """Compresse tous les tenseurs du modèle avec JointSQ (Sparsification/Quantification jointe)."""
+    state = model.state_dict()
+    arrays: Dict[str, np.ndarray] = {}
+    meta: Dict = {"method": "jointsq", "ratio": ratio, "params": {}}
+
+    for name, tensor in state.items():
+        if not tensor.is_floating_point():
+            np_arr = tensor.detach().cpu().numpy()
+            arrays[name] = np_arr
+            meta["params"][name] = {
+                "shape": list(np_arr.shape),
+                "dtype": str(np_arr.dtype),
+                "raw": True,
+            }
+            continue
+
+        clean_tensor = tensor.detach().clone()
+        if not torch.isfinite(clean_tensor).all():
+            clean_tensor = torch.nan_to_num(clean_tensor, nan=0.0, posinf=0.0, neginf=0.0)
+
+        flat = clean_tensor.view(-1)
+        numel = flat.numel()
+        
+        if numel == 0:
+            arrays[name] = np.zeros(0, dtype=np.float32)
+            meta["params"][name] = {
+                "shape": list(tensor.shape),
+                "dtype": str(tensor.dtype),
+                "raw": True,
+            }
+            continue
+
+        max_bit = math.ceil(numel * 32 * ratio)
+        mask = mckp_greedy(flat.abs(), max_bit)
+        
+        # 2-bit
+        mask_2 = (mask == 2)
+        idx_2 = torch.nonzero(mask_2).view(-1)
+        if idx_2.numel() > 0:
+            val_2, norm_2 = stochastic_quantize(flat[mask_2], n=2)
+        else:
+            val_2 = torch.zeros(0, dtype=torch.int8)
+            norm_2 = 0.0
+            
+        # 4-bit
+        mask_4 = (mask == 4)
+        idx_4 = torch.nonzero(mask_4).view(-1)
+        if idx_4.numel() > 0:
+            val_4, norm_4 = stochastic_quantize(flat[mask_4], n=8)
+        else:
+            val_4 = torch.zeros(0, dtype=torch.int8)
+            norm_4 = 0.0
+            
+        # 8-bit
+        mask_8 = (mask == 8)
+        idx_8 = torch.nonzero(mask_8).view(-1)
+        if idx_8.numel() > 0:
+            val_8, norm_8 = stochastic_quantize(flat[mask_8], n=128)
+        else:
+            val_8 = torch.zeros(0, dtype=torch.int8)
+            norm_8 = 0.0
+
+        arrays[f"{name}__idx2"] = idx_2.cpu().numpy().astype(np.int64)
+        arrays[f"{name}__val2"] = val_2.cpu().numpy().astype(np.int8)
+        arrays[f"{name}__idx4"] = idx_4.cpu().numpy().astype(np.int64)
+        arrays[f"{name}__val4"] = val_4.cpu().numpy().astype(np.int8)
+        arrays[f"{name}__idx8"] = idx_8.cpu().numpy().astype(np.int64)
+        arrays[f"{name}__val8"] = val_8.cpu().numpy().astype(np.int8)
+        
+        meta["params"][name] = {
+            "shape": list(tensor.shape),
+            "dtype": str(tensor.dtype),
+            "raw": False,
+            "norm2": float(norm_2),
+            "norm4": float(norm_4),
+            "norm8": float(norm_8)
+        }
+
+    buf = io.BytesIO()
+    np.savez_compressed(buf, **arrays)
+    return buf.getvalue(), meta
+
+
+def jointsq_decompress_model(model: nn.Module, data: bytes, meta: Dict) -> None:
+    """Décompresse et charge les paramètres du modèle compressés par JointSQ."""
+    buf = io.BytesIO(data)
+    arrays = np.load(buf, allow_pickle=False)
+    state: Dict[str, torch.Tensor] = {}
+
+    device = next(model.parameters()).device
+
+    for name, p in meta["params"].items():
+        if p.get("raw", False):
+            state[name] = torch.tensor(arrays[name], device=device).view(p["shape"])
+            continue
+
+        shape = p["shape"]
+        numel = int(np.prod(shape))
+        flat = torch.zeros(numel, dtype=torch.float32, device=device)
+
+        # 2-bit
+        idx_2 = torch.tensor(arrays[f"{name}__idx2"], dtype=torch.long, device=device)
+        val_2 = torch.tensor(arrays[f"{name}__val2"], dtype=torch.float32, device=device)
+        norm_2 = p["norm2"]
+        if idx_2.numel() > 0:
+            flat[idx_2] = norm_2 * val_2 / 2.0
+
+        # 4-bit
+        idx_4 = torch.tensor(arrays[f"{name}__idx4"], dtype=torch.long, device=device)
+        val_4 = torch.tensor(arrays[f"{name}__val4"], dtype=torch.float32, device=device)
+        norm_4 = p["norm4"]
+        if idx_4.numel() > 0:
+            flat[idx_4] = norm_4 * val_4 / 8.0
+
+        # 8-bit
+        idx_8 = torch.tensor(arrays[f"{name}__idx8"], dtype=torch.long, device=device)
+        val_8 = torch.tensor(arrays[f"{name}__val8"], dtype=torch.float32, device=device)
+        norm_8 = p["norm8"]
+        if idx_8.numel() > 0:
+            flat[idx_8] = norm_8 * val_8 / 128.0
+
+        if not torch.isfinite(flat).all():
+            logging.warning(f"[compression] NaN/Inf résiduels dans '{name}' (jointsq), remplacement par 0.")
+            flat = torch.nan_to_num(flat, nan=0.0, posinf=0.0, neginf=0.0)
+
+        state[name] = flat.view(shape)
+
+    model.load_state_dict(state)
+
+
 # ─── API publique ─────────────────────────────────────────────────────────────
 def compress_model(model: nn.Module,
                    method: str = "quantization",
@@ -237,6 +455,8 @@ def compress_model(model: nn.Module,
         return quantize_model(model, bits)
     elif method == "sparsification":
         return sparsify_model(model, ratio)
+    elif method == "jointsq":
+        return jointsq_compress_model(model, ratio)
     else:
         return pack_model(model)
 
@@ -248,6 +468,8 @@ def decompress_model(model: nn.Module, data: bytes, meta: Dict) -> None:
         dequantize_model(model, data, meta)
     elif method == "sparsification":
         desparsify_model(model, data, meta)
+    elif method == "jointsq":
+        jointsq_decompress_model(model, data, meta)
     else:
         unpack_model(model, data, meta)
 

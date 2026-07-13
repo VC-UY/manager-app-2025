@@ -423,6 +423,36 @@ class Manager:
                 self._resolve_mac(requester_mac_hint) if requester_mac_hint else None
             ) or self._resolve_mac(vol_ip)
 
+            # --- Rôle dynamique réassigné en fonction des ressources ---
+            vol_scores = []
+            for mac, node in self._volunteers.items():
+                res = node.resources
+                # Score de ressources simple
+                cpu_power = res.cpu_cores * res.cpu_freq_ghz
+                ram = res.ram_gb
+                bw = res.network_bandwidth_mbps
+                bat = getattr(res, 'battery', 100.0)
+                load_factor = (100.0 - getattr(res, 'cpu_load', 0.0))
+                
+                score = (0.2 * (cpu_power / 8.0) + 
+                         0.2 * (ram / 8.0) + 
+                         0.2 * (bw / 100.0) + 
+                         0.2 * (bat / 100.0) + 
+                         0.2 * (load_factor / 100.0))
+                vol_scores.append((mac, score))
+            
+            # Trier par score décroissant
+            vol_scores.sort(key=lambda x: x[1], reverse=True)
+            
+            # Assigner les rôles : les 50% meilleurs sont actifs, les autres passifs
+            n_vol = len(vol_scores)
+            half = max(1, n_vol // 2)
+            active_macs = {mac for mac, _ in vol_scores[:half]}
+            
+            assigned_role = "passive"
+            if requester_mac in active_macs or n_vol <= 1:
+                assigned_role = "active"
+
             vol_list = []
             for mac, node in self._volunteers.items():
                 #FIX : exclure le demandeur pour éviter XOR = 0
@@ -430,12 +460,16 @@ class Manager:
                     continue
                 node_dict = node.to_dict()
                 node_dict["bandwidth_history"] = list(self._neighbor_rewards[mac])
+                node_dict["dynamic_role"] = "active" if mac in active_macs else "passive"
                 vol_list.append(node_dict)
 
-        send_message(conn, MSG_NEIGHBORS_RESPONSE, {"volunteers": vol_list})
+        send_message(conn, MSG_NEIGHBORS_RESPONSE, {
+            "volunteers": vol_list,
+            "assigned_role": assigned_role
+        })
         logging.info(
             f"[Demande voisins] Réponse à {requester_mac or vol_ip} : "
-            f"{len(vol_list)} voisins potentiels (demandeur exclu)"
+            f"{len(vol_list)} voisins potentiels (demandeur exclu). Rôle assigné : {assigned_role}"
         )
 
     def _on_stats_push(self, sender_ip: str, data: dict):

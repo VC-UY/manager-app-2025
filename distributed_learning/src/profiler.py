@@ -163,6 +163,16 @@ class ModelProfiler:
         vrais poids du volontaire.
         """
         import copy
+        import gc
+
+        # ── Déterminer la taille d'entrée réelle selon le dataset ─────────────
+        # CIFAR-10/100 : images 32×32 (pas de resize à 224×224 dans le pipeline)
+        # ImageNet     : images 224×224
+        _ds = dataset_name.lower().strip()
+        if _ds in ("cifar10", "cifar100"):
+            _h, _w = 32, 32
+        else:
+            _h, _w = 224, 224
 
         # ── Copie temporaire : jamais toucher self.model ──────────────────────
         model_copy = copy.deepcopy(self.model)
@@ -178,9 +188,9 @@ class ModelProfiler:
         optimizer_mem_mb = opt_factor * param_size_mb
 
         # Activations memory: estimation dynamique sur la COPIE
-        # Taille d'entrée : tous les datasets sont redimensionnés à 224×224
-        # (CIFAR-10/100 via transforms, ImageNet nativement)
-        input_shape = (batch_size, 3, 224, 224)
+        # On utilise un batch réduit pour le profiling afin de limiter la RAM
+        profile_bs = min(batch_size, 4)
+        input_shape = (profile_bs, 3, _h, _w)
         dummy_input = torch.zeros(input_shape, device=self.device)
 
         torch.cuda.empty_cache()
@@ -191,11 +201,14 @@ class ModelProfiler:
                 with torch.no_grad():
                     out = model_copy(dummy_input)
                 peak_mem = torch.cuda.max_memory_allocated()
-                act_mem_mb = (peak_mem - mem_before) / (1024**2)
+                # Extrapoler au vrai batch_size
+                act_mem_mb = (peak_mem - mem_before) / (1024**2) * (batch_size / profile_bs)
             except Exception:
                 act_mem_mb = float(batch_size) * 0.1
         else:
-            act_mem_mb = float(batch_size) * 0.2
+            # Estimation CPU : proportionnelle au batch size et à la résolution
+            pixels = _h * _w
+            act_mem_mb = float(batch_size) * 0.2 * (pixels / (32 * 32))
 
         ram_needed_mb = param_size_mb + gradient_size_mb + optimizer_mem_mb + act_mem_mb
         ram_needed_gb = ram_needed_mb / 1024.0
@@ -205,7 +218,7 @@ class ModelProfiler:
             comp_size_mb = param_size_mb
         elif compression_type.lower() == "quantization":
             comp_size_mb = param_size_mb * (quantization_bits / 32.0)
-        elif compression_type.lower() == "sparsification":
+        elif compression_type.lower() == "sparsification" or compression_type.lower() == "jointsq":
             comp_size_mb = param_size_mb * sparsification_ratio
         else:
             comp_size_mb = param_size_mb
@@ -219,17 +232,19 @@ class ModelProfiler:
 
         # Estimation du temps d'une époque — warmup sur la COPIE avec CrossEntropyLoss
         _train_sizes = {"cifar10": 50_000, "cifar100": 50_000, "imagenet": 1_281_167}
-        train_size = _train_sizes.get(dataset_name.lower(), 50_000)
+        train_size = _train_sizes.get(_ds, 50_000)
         images_per_volunteer = train_size // max(1, 5)   # estimation sur 5 volontaires
         batches_per_epoch = images_per_volunteer // batch_size
 
         model_copy.train()
         criterion_tmp = torch.nn.CrossEntropyLoss()
-        dummy_labels = torch.zeros(batch_size, dtype=torch.long, device=self.device)
+        # Utiliser le même batch réduit pour le benchmark de vitesse
+        dummy_labels = torch.zeros(profile_bs, dtype=torch.long, device=self.device)
         opt_tmp = torch.optim.SGD(model_copy.parameters(), lr=0.01)
 
+        n_warmup = 3
         t0 = time.time()
-        for _ in range(5):
+        for _ in range(n_warmup):
             opt_tmp.zero_grad()
             out = model_copy(dummy_input)
             loss_tmp = criterion_tmp(out, dummy_labels)
@@ -238,11 +253,13 @@ class ModelProfiler:
                 opt_tmp.step()
         t1 = time.time()
 
-        # Nettoyage explicite de la copie
-        del model_copy, opt_tmp, dummy_input, dummy_labels
+        # Nettoyage explicite de la copie pour libérer la RAM au plus vite
+        del model_copy, opt_tmp, dummy_input, dummy_labels, criterion_tmp
+        gc.collect()
         torch.cuda.empty_cache()
 
-        step_time_avg = (t1 - t0) / 5.0
+        # Extrapoler le temps au vrai batch_size (temps ≈ linéaire en bs)
+        step_time_avg = (t1 - t0) / n_warmup * (batch_size / profile_bs)
         epoch_time_estimate = step_time_avg * batches_per_epoch
 
         return {
