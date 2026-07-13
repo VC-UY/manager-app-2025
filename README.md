@@ -83,6 +83,28 @@
 
 ---
 
+## 2. Rôle Détaillé des Composants et Modules
+
+Le système est structuré de manière modulaire. Le tableau ci-dessous synthétise le rôle de chaque fichier à l'état actuel :
+
+| Composant / Module | Rôle Technique Actuel | Fonctions Clés |
+| :--- | :--- | :--- |
+| **`coordinator.py`** | Nœud coordinateur d'orchestration. Gère l'enregistrement et l'état de vie (liveness) des volontaires sans participer aux données d'apprentissage. | `_listen_volunteers`, `_purge_inactive` (détection de timeout à 35s), `_broadcast_loop` (envoi différentiel au manager toutes les 5s). |
+| **`manager.py`** | Serveur de routage intermédiaire et de statistiques globales. Il centralise les files d'attente réseau pour contourner les contraintes de NAT/Pare-feu entre volontaires. | `_on_volunteer_list` (filtrage RAM des nœuds), `_on_send_model` / `_on_poll` (gestion des files d'attente), `_on_neighbors_request` (calcul de partition active/passive pour AD-PSGD). |
+| **`volunteer.py`** | Agent d'apprentissage local exécuté sur chaque machine participante. Il orchestre l'entraînement local, la communication et l'analyse de performance. | `_estimate_resources_vs_needs` (profilage pré-volontariat), `_train_local_safe` (entraînement SGD robuste), `_run_gossip_round` (orchestration du cycle gossip). |
+| **`src/adpsgd.py`** | Algorithme AD-PSGD (Asynchronous Decentralized Parallel SGD). Gère la topologie bipartie et le calcul de staleness pour l'asynchronisme. | `BipartiteTopology` (ring/exponential), `adpsgd_average` (moyenne symétrique), `StaleModelReader` (mesure L2 de la staleness $\||x_t - \hat{x}\||_2$). |
+| **`src/peer_sampling.py`** | Sélecteur de pairs adaptatif basé sur les Bandits Contextuels. Évite les nœuds lents ou instables en apprenant de l'historique des transferts. | `SWUCBSelector` (formule Sliding-Window UCB), `update_from_transfer` (calcul de récompense pondérée : 60% bande passante, 30% succès, 10% latence). |
+| **`src/compression.py`** | Opérations de compression de gradients et de modèles pour réduire l'empreinte réseau (frugalité). Contient des correctifs de robustesse anti-NaN. | `quantize_model` (quantification dynamique int8), `sparsification_model` (top-k magnitude), `jointsq_compress` (Knapsack MCKP avec quantification stochastique multi-niveaux), `average_models` (FedAvg robuste). |
+| **`src/stats.py`** | Structures de données de suivi. Enregistre les métriques d'apprentissage et de profilage matériel à chaque round. | `RoundStats` (classe de données), `StatsTracker` (volontaire), `GlobalStats` (manager). |
+| **`src/advanced_profiler.py`** | Profilage bas niveau. Lit directement les fichiers système Linux pour diagnostiquer les anomalies et les ralentissements. | `AdvancedProfiler` (lecture de `/proc/[pid]/status`, `/proc/[pid]/smaps_rollup` pour USS/PSS, `/sys` pour la fréquence CPU), `measure_ipc` (utilisation de `perf stat` pour mesurer l'IPC). |
+| **`src/dataset.py`** | Chargement et partitionnement des données. Gère les topologies de distribution de données. | `load_dataset` (MNIST, CIFAR-10, CIFAR-100, ImageNet), `_iid_partition` et `_non_iid_partition` (2 classes par nœud pour simuler l'hétérogénéité). |
+| **`src/model.py`** | Registre et constructeur des modèles neuronaux. Modifie les couches initiales et finales pour CIFAR. | `create_model` (ResNet-18/50/101/152 et VGG-19 modifiés pour CIFAR 32x32). |
+| **`src/protocol.py`** | Protocole d'échange de messages TCP sérialisés (taille fixe pour l'en-tête + JSON pour les métadonnées + payload binaire). | `send_message`, `receive_message`. |
+
+---
+
+
+
 ## Prérequis
 
 | Composant | Version minimale |
