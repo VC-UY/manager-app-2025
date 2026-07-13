@@ -1,6 +1,3 @@
-# distributed_learning_systeme_vcuy1
-depot pour un systeme sur machines volontaires d'aoorentissage distribue
-
 # Guide d'utilisation — Système d'apprentissage distribué sur machines volontaires
 
 > **Projet de Mémoire Master II — MBASSI ATANGANA Yannick Serge**
@@ -8,7 +5,7 @@ depot pour un systeme sur machines volontaires d'aoorentissage distribue
 
 ## Table des matières
 
-1. [Architecture](#architecture)
+1. [Architecture & Fonctionnalités Clés](#architecture--fonctionnalités-clés)
 2. [Prérequis](#prérequis)
 3. [Installation](#installation)
 4. [Test local (1 machine)](#test-local-1-machine)
@@ -17,14 +14,12 @@ depot pour un systeme sur machines volontaires d'aoorentissage distribue
 7. [Configuration avancée](#configuration-avancée)
 8. [Monitoring en temps réel](#monitoring-en-temps-réel)
 9. [Comprendre les statistiques](#comprendre-les-statistiques)
-10. [Scénarios d'expérience recommandés](#scénarios-dexpérience-recommandés)
+10. [Scénarios d'expérience recommandés (Thèmes de recherche)](#scénarios-dexpérience-recommandés-thèmes-de-recherche)
 11. [Dépannage](#dépannage)
-8. [Dépannage](#dépannage)
-9. [Scénarios d'expérience recommandés](#scénarios-dexpérience-recommandés)
 
 ---
 
-## Architecture
+## Architecture & Fonctionnalités Clés
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -32,6 +27,7 @@ depot pour un systeme sur machines volontaires d'aoorentissage distribue
 │                     COORDINATEUR :9000                       │
 │  • Reçoit les heartbeats des volontaires                     │
 │  • Maintient la liste des nœuds actifs                       │
+│  • Gère la détection de défaillance (heartbeats, timeouts)   │
 │  • Diffuse cette liste au Manager toutes les 5 s             │
 └────────────────────────┬─────────────────────────────────────┘
                          │ MSG_VOLUNTEER_LIST (TCP)
@@ -41,6 +37,7 @@ depot pour un systeme sur machines volontaires d'aoorentissage distribue
 │                       MANAGER :9001                          │
 │  • Reçoit la liste des volontaires                           │
 │  • Calcule les k voisins XOR (Kademlia-style)                │
+│  • Assigne dynamiquement les rôles AD-PSGD (Actif/Passif)    │
 │  • Route les modèles compressés entre volontaires            │
 │  • Publie les statistiques globales                          │
 └────────────────────────┬─────────────────────────────────────┘
@@ -50,20 +47,39 @@ depot pour un systeme sur machines volontaires d'aoorentissage distribue
      Volontaire 0   Volontaire 1   Volontaire N
      Machine C      Machine D      Machine …
      • Heartbeat → Coordinateur
-     • Entraînement local (SGD)
+     • Entraînement local sécurisé (SGD avec rollback sur NaN/Inf)
      • Push modèle → Manager → pair
      • Pull modèles reçus ← Manager
-     • Agrégation FedAvg
-     • Statistiques par round
+     • Sélection adaptative des pairs (SW-UCB avec exploration)
+     • Compression frugale (JointSQ / Quantization / Sparsification)
+     • Agrégation AD-PSGD (Bipartite, averaging symétrique)
+     • Ajustement du LR (AdaLoss / AdaStair)
+     • Profilage système bas niveau (/proc, /sys, perf stat, throttling)
 ```
 
-**Topologie XOR** : L'adresse IP de chaque volontaire est hachée (SHA-256 → uint64).
-La distance entre deux volontaires est le XOR de leurs hachés.
-Les k voisins les plus proches (petite distance XOR) forment la vue locale du nœud.
+### 1. Topologie XOR & Peer Sampling SW-UCB
+* **Topologie XOR** : L'adresse IP de chaque volontaire est hachée (SHA-256 → uint64). La distance entre deux volontaires est le XOR de leurs hachés.
+* **SW-UCB Selector (Garivier & Moulines, 2008)** : Chaque nœud choisit ses pairs à l'aide d'un bandit manchot glissant. La récompense composite équilibre la bande passante, la latence, le succès de transfert, un **bonus de diversité** (anti-monopole) et un retour d'**utilité du modèle** (gain d'accuracy post-agrégation) pour s'adapter aux réseaux hétérogènes et aux données Non-IID.
+* **Exploration $\epsilon$-greedy** : Un taux d'exploration $\epsilon$ dynamique (décroissant au fil des rounds) force périodiquement la sélection de pairs sous-explorés pour découvrir de nouvelles routes.
 
-**Gossip learning** : À chaque round, un volontaire envoie son modèle compressé
-à `GOSSIP_FANOUT` voisins aléatoires parmi ses k plus proches, puis récupère
-les modèles que ses pairs lui ont envoyés, et effectue une moyenne FedAvg.
+### 2. Optimisation AD-PSGD (Lian et al., 2018)
+* **Topologies de Ring** : `ring` (voisins directs) ou `exponential` (sauts de pas $2^k$).
+* **Évitement de Deadlocks** : Partitionnement bipartite en rôles **Actif** (initie l'averaging) et **Passif** (répond uniquement aux sollicitations).
+* **Adaptive Skipping** : Les nœuds passifs sautent dynamiquement les étapes d'averaging si leur *staleness* (distance de modèle $\||x - \hat{x}\||_2$) est inférieure à un seuil critique, économisant le trafic réseau.
+
+### 3. Compression Frugale JointSQ
+* **JointSQ** : Algorithme conjoint de quantification et sparsification basé sur l'optimisation MCKP (Multiple-Choice Knapsack Problem) gloutonne pour maximiser la précision transmise sous contrainte stricte de bande passante.
+* **Méthodes alternatives** : Quantification uniforme (`quantization` 8-bits) ou sparsification top-k (`sparsification`).
+
+### 4. Ajustement Adaptatif du Taux d'Apprentissage
+* **AdaStair** : Décroissance par paliers à des rounds spécifiques définis.
+* **AdaLoss** : Suivi de la stagnation de la loss de validation et division automatique du taux d'apprentissage par 2 lorsque le plateau est atteint.
+
+### 5. Profilage Matériel Avancé (Edge AI)
+* Analyse continue par lecture directe de `/proc/[pid]/status` et `/sys/devices/system/cpu` :
+  - **Memory (RSS, PSS, USS)** pour isoler le coût marginal réel du modèle et détecter les fuites.
+  - **Thermal Throttling & Fréquences CPU** pour identifier les ralentissements d'origine matérielle.
+  - **IPC (Instructions Par Cycle)** via `perf stat` pour séparer les inefficacités logicielles des limites physiques.
 
 ---
 
@@ -72,478 +88,211 @@ les modèles que ses pairs lui ont envoyés, et effectue une moyenne FedAvg.
 | Composant | Version minimale |
 |-----------|-----------------|
 | Python    | 3.9             |
-| PyTorch   | 2.0             |
-| torchvision | 0.15          |
-| numpy     | 1.24            |
-| OS        | Linux / macOS / Windows |
+| PyTorch   | 2.0.0 (CPU/CUDA)|
+| torchvision | 0.15.0        |
+| numpy     | 1.24.0          |
+| psutil    | 5.9.0           |
+| OS        | Linux (recommandé pour le profilage avancé), macOS, Windows |
 
-**Réseau** : Le coordinateur et le manager doivent être joignables depuis tous les
-volontaires. Les volontaires communiquent uniquement via le manager (pas de P2P direct).
-
-**Ports à ouvrir dans le pare-feu** :
-- Machine coordinateur : TCP entrant 9000
-- Machine manager : TCP entrant 9001
+*Note sur le profilage* : Les fonctionnalités de profilage avancées (PSS/USS, fréquences CPU exactes, IPC via perf) nécessitent un noyau **Linux** et les privilèges d'accès adéquats (ex: `/proc/sys/kernel/perf_event_paranoid` configuré). Des solutions de repli (fallbacks) automatiques via `psutil` sont implémentées pour macOS/Windows.
 
 ---
 
 ## Installation
 
-### Sur chaque machine (coordinateur, manager, volontaires)
+### Sur chaque machine (Coordinateur, Manager, Volontaires)
 
 ```bash
-# 1. Cloner / copier le projet
-git clone <repo>   # ou copier le dossier distributed_learning/
-cd distributed_learning
+# 1. Cloner ou copier le projet
+git clone <repo>
+cd distributed_learning_2/distributed_learning
 
-# 2. Créer un environnement virtuel
-python -m venv venv
-source venv/bin/activate          # Linux/macOS
-# venv\Scripts\activate           # Windows
+# 2. Créer l'environnement virtuel
+python3 -m venv venv
+source venv/bin/activate
 
 # 3. Installer les dépendances
 pip install -r requirements.txt
-
-# 4. (Optionnel GPU) Installer PyTorch CUDA
-# Voir https://pytorch.org/get-started/locally/ pour la commande adaptée
 ```
 
 ---
 
 ## Test local (1 machine)
 
-Le script `launch_experiment.py` démarre le manager, le coordinateur et N volontaires
-en sous-processus sur une seule machine, avec des IPs simulées (ex: `10.0.0.1`,
-`10.0.0.2` …) pour activer la topologie XOR réelle même en local.
+Le script `launch_experiment.py` configure et orchestre une simulation complète en local. Il simule des adresses IPs distinctes (`10.0.0.1`, `10.0.0.2`...) pour garantir le bon calcul de la topologie XOR.
+
+### Exemple de commandes d'expérimentation
 
 ```bash
-# Lancement minimal (3 volontaires, MNIST, non-IID, quantification)
-python launch_experiment.py --n-volunteers 3
+# Lancement classique (AD-PSGD activé, compression JointSQ, LR AdaLoss)
+python launch_experiment.py --n-volunteers 3 --dataset cifar10 --max-rounds 15
 
-# Paramétrage complet
-python launch_experiment.py \
-    --n-volunteers 5       \   # nombre de volontaires
-    --dataset mnist        \   # mnist | cifar10
-    --partition non-iid    \   # iid | non-iid
-    --compression quantization \  # quantization | sparsification | none
-    --k 3                  \   # voisins XOR par nœud
-    --gossip-interval 30   \   # secondes entre rounds
-    --local-epochs 3           # epochs locaux par round
+# Comparer sans AD-PSGD (Gossip standard FedAvg) et sans compression
+python launch_experiment.py --n-volunteers 4 --compression none --adpsgd-enabled false
 
-# Les logs sont dans ./logs/   (un fichier par composant)
-# Les stats sont dans ./results/
+# Expérimenter avec sparsification pure et topologie Ring
+python launch_experiment.py --n-volunteers 5 --compression sparsification --sparsity 0.05 --adpsgd-topology ring
 
-# Monitoring en direct (dans un autre terminal)
-python monitor.py
+# Utiliser le scheduler AdaStair avec 4 volontaires en mode Non-IID
+python launch_experiment.py --n-volunteers 4 --partition non-iid --adaptive-lr adastair --max-rounds 20
 ```
 
-> **Conseil** : commencez toujours par un test local avant le déploiement multi-machines.
-> Vérifiez que `results/global_stats.json` se remplit bien après quelques minutes.
+### Arguments de `launch_experiment.py`
+
+| Argument | Choix / Type | Défaut | Description |
+|----------|--------------|--------|-------------|
+| `--n-volunteers` | `int` | `3` | Nombre de nœuds volontaires |
+| `--model` | `resnet18`, `resnet50`, `resnet101`, `resnet152`, `vgg19` | `resnet18` | Modèle de deep learning |
+| `--dataset` | `cifar10`, `cifar100`, `imagenet` | `cifar10` | Base de données d'apprentissage |
+| `--partition` | `iid`, `non-iid` | `iid` | Mode de répartition des données |
+| `--compression` | `quantization`, `sparsification`, `jointsq`, `none` | `jointsq` | Méthode de réduction de taille |
+| `--sparsity` | `float` | `0.05` | Ratio de paramètres conservés pour top-k (5%) |
+| `--bits` | `int` | `8` | Bits pour la quantification (int8) |
+| `--adaptive-lr` | `none`, `adastair`, `adaloss` | `adaloss` | Scheduler de taux d'apprentissage |
+| `--adpsgd-enabled` | `true`, `false` | `true` | Activer l'algorithme AD-PSGD |
+| `--adpsgd-topology`| `ring`, `exponential` | `exponential` | Topologie logique d'échange |
+| `--max-rounds` | `int` | `15` | Nombre max de rounds de communication |
 
 ---
 
 ## Démarrage pas à pas
 
-### Étape 1 — Démarrer le Manager (machine B)
-
+### Étape 1 — Lancer le Manager (Machine B)
 ```bash
-# Variables d'environnement (optionnelles, les valeurs par défaut sont dans src/config.py)
-export MANAGER_HOST=0.0.0.0
+export MANAGER_HOST=192.168.1.130
 export MANAGER_PORT=9001
-export K_NEIGHBORS=4
-export STATS_PRINT_INTERVAL=30
-
+export K_NEIGHBORS=3
 python3 manager.py
 ```
 
-> Démarrez **toujours le manager en premier**, car le coordinateur
-> essaie de lui envoyer la liste dès le premier volontaire connecté.
-
----
-
-### Étape 2 — Démarrer le Coordinateur (machine A)
-
+### Étape 2 — Lancer le Coordinateur (Machine A)
 ```bash
-export COORDINATOR_HOST=0.0.0.0
+export COORDINATOR_HOST=192.168.1.120
 export COORDINATOR_PORT=9000
-export MANAGER_EXTERNAL_HOST=<IP_PUBLIQUE_MACHINE_B>
+export MANAGER_EXTERNAL_HOST=192.168.1.130
 export MANAGER_PORT=9001
-export HEARTBEAT_TIMEOUT=35
-
 python3 coordinator.py
 ```
 
----
-
-### Étape 3 — Démarrer chaque Volontaire (machines C, D, …)
-
+### Étape 3 — Lancer chaque Volontaire (Machines distantes)
 ```bash
-# Arguments obligatoires :
-#   --id          : identifiant unique 0-indexé de ce volontaire
-#   --n-volunteers: nombre total de volontaires prévus
-#   --coordinator : IP publique du coordinateur
-#   --manager     : IP publique du manager
+# Machine C (ID 0)
+python3 volunteer.py --id 0 --n-volunteers 3 --coordinator 192.168.1.120 --manager 192.168.1.130
 
-# Volontaire 0 (sur machine C)
-python3 volunteer.py \
-    --id 0
-    --n-volunteers 5 \
-    --coordinator 192.168.1.106 \
-    --manager     192.168.1.130
-
-# Volontaire 1 (sur machine D)
-python3 volunteer.py \
-    --id 1 \
-    --n-volunteers 5 \
-    --coordinator 192.168.1.106 \
-    --manager     192.168.1.106
+# Machine D (ID 1)
+python3 volunteer.py --id 1 --n-volunteers 3 --coordinator 192.168.1.120 --manager 192.168.1.130
 ```
-
-L'argument `--my-ip` est optionnel : si omis, le volontaire détecte automatiquement
-son IP sortante en tentant de se connecter au coordinateur.
-
----
-
-## Configuration avancée
-
-Toutes les variables d'environnement suivantes peuvent être définies avant le lancement.
-
-### Paramètres d'entraînement
-
-| Variable | Défaut | Description |
-|----------|--------|-------------|
-| `DATASET` | `mnist` | Dataset : `mnist` ou `cifar10` |
-| `DATA_PARTITION` | `iid` | Partition des données : `iid` ou `non-iid` |
-| `LOCAL_EPOCHS` | `3` | Epochs d'entraînement local par round |
-| `BATCH_SIZE` | `32` | Taille de batch |
-| `LEARNING_RATE` | `0.01` | Taux d'apprentissage SGD |
-| `NUM_CLASSES` | `10` | Nombre de classes |
-
-### Paramètres gossip / topologie
-
-| Variable | Défaut | Description |
-|----------|--------|-------------|
-| `K_NEIGHBORS` | `4` | Nombre de voisins XOR par nœud |
-| `GOSSIP_INTERVAL` | `60` | Secondes entre deux rounds gossip |
-| `GOSSIP_FANOUT` | `2` | Voisins contactés par round |
-
-### Paramètres de compression (frugalité bande passante)
-
-| Variable | Défaut | Description |
-|----------|--------|-------------|
-| `COMPRESSION` | `quantization` | Méthode : `quantization`, `sparsification`, `none` |
-| `QUANTIZATION_BITS` | `8` | Bits pour la quantification (8 = int8) |
-| `SPARSIFICATION_RATIO` | `0.05` | Fraction des paramètres conservés (top-5 %) |
-
-**Économies typiques** :
-- `quantization` (int8) : ~4× moins de bande passante (float32→int8)
-- `sparsification` (top-5 %) : ~15–20× selon le modèle
-- Combinaison possible en chaînant les méthodes dans `compression.py`
-
-### Robustesse réseau
-
-| Variable | Défaut | Description |
-|----------|--------|-------------|
-| `HEARTBEAT_INTERVAL` | `10` | Secondes entre heartbeats |
-| `HEARTBEAT_TIMEOUT` | `35` | Secondes d'inactivité avant expulsion |
-| `SOCKET_TIMEOUT` | `60` | Timeout de toute connexion TCP |
-| `MAX_RETRIES` | `3` | Tentatives avant abandon |
-| `RETRY_DELAY` | `5.0` | Pause en secondes entre tentatives |
 
 ---
 
 ## Déploiement automatique SSH
 
-Le script `deploy.sh` automatise le déploiement complet sur plusieurs machines via SSH.
+Utilisez le script `deploy.sh` configuré pour votre parc de machines volontaires :
+1. Éditez les variables `COORD_IP`, `MANAGER_IP` et `VOL_IPS` à l'intérieur du script.
+2. Lancez le déploiement en une seule commande :
+   ```bash
+   ./deploy.sh
+   ```
 
-### Pré-requis SSH
+---
 
-```bash
-# Configurer l'accès SSH sans mot de passe (clés) vers toutes les machines
-ssh-keygen -t ed25519                          # générer une paire de clés si inexistante
-ssh-copy-id ubuntu@192.168.1.10               # coordinateur
-ssh-copy-id ubuntu@192.168.1.11               # manager
-ssh-copy-id ubuntu@192.168.1.20               # volontaire 0
-# etc.
+## Configuration avancée
 
-# Copier le projet sur toutes les machines
-for IP in 192.168.1.10 192.168.1.11 192.168.1.20 192.168.1.21 192.168.1.22; do
-    rsync -av --exclude '__pycache__' --exclude 'venv' \
-        ./distributed_learning/ ubuntu@$IP:~/distributed_learning/
-done
+Toutes les variables d'environnement suivantes sont prises en compte au démarrage des nœuds :
 
-# Installer les dépendances sur chaque machine
-for IP in 192.168.1.10 192.168.1.11 192.168.1.20 192.168.1.21 192.168.1.22; do
-    ssh ubuntu@$IP "cd ~/distributed_learning && \
-        python3 -m venv venv && \
-        venv/bin/pip install -r requirements.txt"
-done
-```
-
-### Lancement avec deploy.sh
-
-```bash
-chmod +x deploy.sh
-
-# Déploiement avec configuration par défaut (modifier les IPs dans le script)
-COORD_IP=192.168.1.10 \
-MANAGER_IP=192.168.1.11 \
-VOL_IPS="192.168.1.20 192.168.1.21 192.168.1.22" \
-DATASET=mnist \
-DATA_PARTITION=non-iid \
-COMPRESSION=quantization \
-K_NEIGHBORS=3 \
-./deploy.sh
-```
-
-Le script :
-
-1. Vérifie la connectivité SSH vers toutes les machines
-2. Arrête tout processus existant du projet
-3. Crée les dossiers `logs/` et `results/` sur chaque machine
-4. Démarre Manager → Coordinateur → Volontaires dans le bon ordre
-
-### Lancement manuel (multi-machines)
-
-Adapter les IPs selon votre réseau (ex: `192.168.1.*` pour réseau local université).
-
-```bash
-# ── Machine B : Manager (TOUJOURS EN PREMIER) ──────────────────────────────
-MANAGER_HOST=0.0.0.0 \
-MANAGER_PORT=9001 \
-MANAGER_EXTERNAL_HOST=192.168.1.11 \
-K_NEIGHBORS=3 \
-STATS_PRINT_INTERVAL=30 \
-python manager.py > logs/manager.log 2>&1 &
-
-# ── Machine A : Coordinateur ────────────────────────────────────────────────
-COORDINATOR_HOST=0.0.0.0 \
-COORDINATOR_PORT=9000 \
-MANAGER_EXTERNAL_HOST=192.168.1.11 \
-MANAGER_PORT=9001 \
-HEARTBEAT_TIMEOUT=35 \
-python coordinator.py > logs/coordinator.log 2>&1 &
-
-# ── Machine C : Volontaire 0 ────────────────────────────────────────────────
-DATASET=mnist \
-DATA_PARTITION=non-iid \
-COMPRESSION=quantization \
-LOCAL_EPOCHS=3 \
-GOSSIP_INTERVAL=60 \
-python volunteer.py \
-    --id 0 --n-volunteers 5 \
-    --coordinator 192.168.1.10 \
-    --manager     192.168.1.11 \
-    --my-ip       192.168.1.20 \
-    > logs/volunteer_0.log 2>&1 &
-
-# Répéter pour les volontaires 1, 2, 3, 4 (--id 1, 2, 3, 4)
-```
-
-> **Note NAT / université** : si vos machines sont derrière un NAT, spécifiez toujours
-> `--my-ip` avec l'IP visible depuis le réseau local. Le système supporte cette
-> configuration : le coordinateur utilise l'IP déclarée dans le heartbeat.
+* `ADPSGD_ENABLED` (`true`|`false`) : Active AD-PSGD.
+* `ADPSGD_TOPOLOGY` (`ring`|`exponential`) : Choix de la topologie de réseau.
+* `ADPSGD_SKIP_FACTOR_MAX` (Défaut: `5`) : Limite haute du facteur de skipping adaptatif.
+* `ADPSGD_STALENESS_THRESHOLD` (Défaut: `0.05`) : Seuil L2 en dessous duquel l'averaging est sauté.
+* `ADAPTIVE_LR_METHOD` (`none`|`adastair`|`adaloss`) : Politique d'ajustement du LR.
+* `COMPRESSION` (`none`|`quantization`|`sparsification`|`jointsq`) : Méthode de compression.
 
 ---
 
 ## Monitoring en temps réel
 
-### Depuis n'importe quelle machine du réseau
-
+Lancez le tableau de bord de monitoring pour visualiser la progression en direct (ex: précision de test, taux de compression, octets routés) :
 ```bash
-# Monitoring continu (rafraîchissement toutes les 10s)
-python3 monitor.py --manager 192.168.1.11
-
-# Ajuster l'intervalle
-python3 monitor.py --manager 192.168.1.11 --interval 5
-
-# Exporter les stats en JSON et quitter
-python3 monitor.py --manager 192.168.1.106 --export resultats_finaux.json
-
-# Mode log (sans effacement écran — utile pour redirection fichier)
-python3 monitor.py --manager 192.168.1.11 --no-clear >> monitor.log
-```
-
-### Consulter les logs
-
-```bash
-# Log du manager (échanges de modèles, stats globales)
-tail -f logs/manager.log
-
-# Log d'un volontaire (rounds gossip, précision, bande passante)
-tail -f logs/volunteer_0.log
-
-# Voir toutes les stats en direct sur le manager
-tail -f logs/manager.log | grep "STATISTIQUES\|test_acc\|bytes_routed"
-```
-
-### Récupérer les résultats depuis les machines distantes
-
-```bash
-# Récupérer les stats de tous les nœuds
-for IP in 192.168.1.10 192.168.1.11 192.168.1.20 192.168.1.21 192.168.1.22; do
-    rsync -av ubuntu@$IP:~/distributed_learning/results/ ./results_collected/$IP/
-done
+python3 monitor.py --manager 127.0.0.1 --interval 5
 ```
 
 ---
 
 ## Comprendre les statistiques
 
-### Fichiers produits
+Chaque expérience génère des fichiers JSON détaillés dans `results/` :
+- `global_stats.json` : Résumé global du manager (trafic total routé, débit, liste des volontaires actifs).
+- `volunteer_<ip_simulee>.json` : Fichier de stats par volontaire contenant un tableau `rounds` avec toutes les mesures prises au cours de l'entraînement.
 
-```
-results/
-├── global_stats.json          # Stats globales (manager)
-├── volunteer_10_0_0_1.json    # Stats du volontaire 10.0.0.1
-├── volunteer_10_0_0_2.json
-└── ...
-```
-
-### Structure `global_stats.json`
+### Métriques clés à observer dans le JSON du volontaire :
 
 ```json
 {
-  "runtime_s": 3600,
-  "n_active_volunteers": 5,
-  "total_model_exchanges": 120,
-  "total_bytes_routed": 15728640,
-  "throughput_KB_per_s": 4.36,
-  "volunteer_summaries": {
-    "10.0.0.1": {
-      "total_rounds": 24,
-      "best_test_acc": 0.9721,
-      "total_bytes_sent": 3145728
-    }
+  "round_num": 3,
+  "train_loss": 0.412,
+  "test_acc": 0.784,
+  "learning_rate": 0.0005,
+  "compression_ratio": 12.4,
+  "batch_time_avg_s": 0.045,
+  
+  "cpu_percent_peak": 88.5,
+  "cpu_percent_mean": 42.1,
+  "ram_usage_gb_peak": 1.25,
+  "throttle_ratio": 0.12,  // 12% de throttling thermique détecté
+  "ipc": 1.15,             // Instructions par cycle
+  
+  "adpsgd": {
+    "adpsgd_role": "passive",
+    "adpsgd_topology": "exponential",
+    "adpsgd_staleness_norm": 0.0241,  // Norme L2 de dérive du modèle
+    "adpsgd_n_averaging_skip": 1,     // Nombre d'averagings sautés
+    "adpsgd_skip_factor": 3           // Dynamic skip factor actuel
   }
 }
 ```
 
-### Structure `volunteer_<ip>.json`
+---
 
-```json
-{
-  "volunteer_ip": "10.0.0.1",
-  "total_rounds": 24,
-  "best_test_acc": 0.9721,
-  "final_test_acc": 0.9698,
-  "total_train_duration_s": 486.3,
-  "total_bytes_sent": 3145728,
-  "total_bytes_received": 2097152,
-  "avg_compression_ratio": 3.87,
-  "rounds": [
-    {
-      "round_num": 1,
-      "train_loss": 0.6821,
-      "train_acc": 0.7812,
-      "test_acc": 0.8234,
-      "train_duration_s": 21.4,
-      "bytes_sent": 131072,
-      "bytes_received": 131072,
-      "n_models_received": 1,
-      "compression_ratio": 3.91
-    }
-  ]
-}
-```
+## Scénarios d'expérience recommandés (Thèmes de recherche)
 
-### Métriques clés
+Voici 5 protocoles expérimentaux directement exploitables pour la rédaction scientifique de votre mémoire :
 
-| Métrique | Source | Interprétation |
-|----------|--------|----------------|
-| `test_acc` | Volontaire | Précision sur le jeu de test complet |
-| `compression_ratio` | Volontaire | > 1 = gain, ex. 4.0 = 4× moins de bande passante |
-| `throughput_KB_per_s` | Manager | Débit total routé (tous échanges confondus) |
-| `total_bytes_routed` | Manager | Bande passante totale consommée côté manager |
-| `train_duration_s` | Volontaire | Temps d'entraînement local par round |
+### Thème 1 : Topologie et Décentralisation Asynchrone (AD-PSGD)
+* **Objectif** : Comparer l'impact de la topologie logique sur la vitesse de diffusion du modèle.
+* **Protocole** : 
+  1. Lancez une expérience avec `--adpsgd-topology ring` et notez l'évolution du score `test_acc` et du paramètre `adpsgd_staleness_norm` au cours des rounds.
+  2. Répétez l'expérience avec `--adpsgd-topology exponential`.
+* **Attente théorique** : La topologie exponentielle présente un gap spectral plus élevé, accélérant la convergence globale au prix d'une connectivité logique plus complexe.
+
+### Thème 2 : Analyse de la Frugalité Réseau (JointSQ)
+* **Objectif** : Évaluer l'efficacité de la compression MCKP (JointSQ) face aux méthodes de base.
+* **Protocole** :
+  1. Lancez l'apprentissage avec `--compression none` (mesure témoin de la BW totale).
+  2. Testez avec `--compression quantization --bits 8`.
+  3. Testez avec `--compression jointsq`.
+* **Attente théorique** : JointSQ doit démontrer un meilleur compromis (Pareto optimal) entre le ratio de compression réel et la perte de précision induite sur le modèle final.
+
+### Thème 3 : Robustesse et Bandits Contextuels (SW-UCB)
+* **Objectif** : Prouver que l'ajout du signal de diversité et de qualité de modèle empêche la monopolisation des nœuds rapides.
+* **Protocole** :
+  1. Observez la répartition des sélections dans `volunteer_<ip>.json` (champ `neighbors_info`).
+  2. Modifiez artificiellement le fichier `src/peer_sampling.py` pour couper le bonus de diversité ou le feedback de modèle (ex: mettre leur poids à 0).
+* **Attente théorique** : Sans ces bonus, le système converge vers une exploitation pure du nœud possédant le meilleur lien réseau (monopole), alors que le système complet maintient une couverture large du réseau, indispensable en cas de données Non-IID.
+
+### Thème 4 : Mitigation du Drifting sous Données Non-IID
+* **Objectif** : Montrer comment les algorithmes d'ajustement du LR stabilisent l'apprentissage asynchrone lorsque les distributions de données divergent.
+* **Protocole** :
+  1. Lancez `--partition non-iid --adaptive-lr none`.
+  2. Lancez `--partition non-iid --adaptive-lr adaloss`.
+* **Attente théorique** : AdaLoss amortit les oscillations provoquées par le drift de modèle en divisant localement le pas d'apprentissage lorsque la convergence s'essouffle.
+
+### Thème 5 : Profilage Matériel et Stragglers sur l'Edge
+* **Objectif** : Identifier et corréler les goulets d'étranglement physiques.
+* **Protocole** :
+  1. Examinez les variables `throttle_ratio` et `ipc` récoltées sur les différents nœuds.
+  2. Si un nœud ralentit le round (`ete_seconds` élevé), déterminez si le blocage provient de ressources saturées (IPC bas, RAM saturée) ou d'un bridage thermique (`throttle_ratio` élevé).
+* **Attente théorique** : Le profiler avancé permet de distinguer de façon déterministe un bug logiciel (ex: fuite de mémoire) d'une contrainte d'environnement physique.
 
 ---
 
-## Dépannage
-
-### Volontaire ne trouve pas le coordinateur
-```
-Connexion coordinateur perdue : [Errno 111] Connection refused
-```
-→ Vérifier que `coordinator.py` est bien démarré et que le port 9000 est ouvert.
-→ Vérifier `--coordinator <IP>` pointe vers la bonne machine.
-
-### Manager dit "Destinataire inconnu"
-```
-Modèle refusé : Destinataire inconnu : 10.0.0.3
-```
-→ Le coordinateur n'a pas encore transmis la liste au manager.
-→ Attendre quelques secondes (délai max 5 s entre diffusions).
-→ Vérifier que `MANAGER_EXTERNAL_HOST` sur le coordinateur pointe bien vers le manager.
-
-### Volontaire ne reçoit jamais de modèle
-→ Vérifier que `--my-ip` correspond à l'IP visible par les autres machines.
-→ Si test local, utiliser des IPs fictives distinctes (`--my-ip 10.0.0.1`, etc.).
-
-### Erreur "Payload trop grand"
-→ Réduire `SPARSIFICATION_RATIO` ou utiliser `COMPRESSION=quantization`.
-→ Augmenter `MAX_MODEL_BYTES` si le modèle est volontairement grand.
-
-### Consommation mémoire excessive sur le manager
-→ La file par volontaire peut grossir si un nœud ne poll pas.
-→ Réduire `GOSSIP_INTERVAL` ou augmenter la fréquence de poll dans `volunteer.py`.
-
----
-
-## Scénarios d'expérience recommandés
-
-### Expérience 1 — Impact de la compression sur la bande passante
-
-Lancer 3 fois la même expérience avec :
-```bash
-COMPRESSION=none         python volunteer.py …
-COMPRESSION=quantization python volunteer.py …
-COMPRESSION=sparsification SPARSIFICATION_RATIO=0.05 python volunteer.py …
-```
-Comparer `total_bytes_sent` et `avg_compression_ratio` dans les fichiers stats.
-
----
-
-### Expérience 2 — Impact du nombre de voisins (k)
-
-```bash
-K_NEIGHBORS=2  # vue très locale
-K_NEIGHBORS=4  # défaut
-K_NEIGHBORS=8  # vue plus large
-```
-Mesurer la vitesse de convergence (`test_acc` par round) et la bande passante.
-
----
-
-### Expérience 3 — Données non-IID vs IID
-
-```bash
-DATA_PARTITION=iid     # distribution uniforme
-DATA_PARTITION=non-iid # hétérogénéité réaliste (2 classes par volontaire)
-```
-Observer la convergence et l'écart-type de précision entre volontaires.
-
----
-
-### Expérience 4 — Robustesse aux déconnexions
-
-1. Lancer 5 volontaires.
-2. Après 5 rounds, couper (Ctrl+C) 1 ou 2 volontaires.
-3. Observer que le système continue à fonctionner.
-4. Redémarrer les volontaires coupés.
-5. Vérifier que la précision reprend progressivement.
-
----
-
-### Expérience 5 — Scalabilité
-
-Augmenter progressivement le nombre de volontaires :
-`N = 3, 5, 10, 20`
-
-Mesurer :
-- Débit total routé (`throughput_KB_per_s`)
-- Temps moyen par round sur le manager
-- Précision de convergence
-
----
-
-*Projet de mémoire — Apprentissage distribué frugal sur machines volontaires*
+*Framework d'Apprentissage Distribué Frugal — Master II*
