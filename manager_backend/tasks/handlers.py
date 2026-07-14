@@ -130,9 +130,25 @@ def handle_task_accept(channel: str, message: Message):
 
         # Verifier si le workflow est en cours
         if workflow.status not in (WorkflowStatus.RUNNING, WorkflowStatus.ASSIGNING, WorkflowStatus.PENDING):
-            workflow.status = WorkflowStatus.RUNNING
-            workflow.save()
-            
+            if workflow.status not in (WorkflowStatus.COMPLETED, WorkflowStatus.FAILED, WorkflowStatus.PARTIAL_FAILURE):
+                workflow.status = WorkflowStatus.RUNNING
+                workflow.save()
+
+        # Ne JAMAIS rétrograder une tâche déjà terminée (accept/start retardés)
+        _TERMINAL = {
+            TaskStatus.COMPLETED,
+            TaskStatus.FAILED,
+            getattr(TaskStatus, "CANCELLED", "CANCELLED"),
+            getattr(TaskStatus, "TIMEOUT", "TIMEOUT"),
+        }
+        if task.status in _TERMINAL:
+            logger.info(
+                "Accept ignoré: tâche %s déjà terminale (%s)",
+                task.name,
+                task.status,
+            )
+            return True
+
         # Verifier si la tâche est en cours
         if task.status != TaskStatus.RUNNING:
             task.status = TaskStatus.RUNNING
@@ -238,8 +254,17 @@ def handle_task_progress(channel: str, message: Message):
             )
             return True
 
+        # Ignore régressions du type 100% → 2% (heartbeat retardé)
+        cur_prog = float(task.progress or 0)
+        if cur_prog >= 99.5 and progress_value < 50:
+            logger.info(
+                "Progression dégénérée ignorée: tâche %s %s%% → %s%%",
+                task.name, cur_prog, progress_value,
+            )
+            return True
+
         # Toujours synchroniser Task.progress (monotone — jamais de régression)
-        task.progress = max(float(task.progress or 0), progress_value)
+        task.progress = max(cur_prog, progress_value)
         if progress_value > 0 and task.status in (
             TaskStatus.CREATED, TaskStatus.PENDING, TaskStatus.ASSIGNED,
         ):
@@ -340,11 +365,36 @@ def handle_task_status(channel: str, message: Message):
             logger.error(f"Pas d'assignation de tache entre le volontaire {volunteer.name} et la tache {task.name}")
             return False
 
-        # Mettre à jour le statut de l'assignation
-        volunteer_task.status = status
-        volunteer_task.save()
-        logger.info(f"Statut de la tâche mise à jour: tâche {task.name} statut {status} par le volontaire {volunteer.name}")
-        
+        # Statuts terminaux : ignorer tout heartbeat / progress tardif
+        _TERMINAL = {
+            TaskStatus.COMPLETED,
+            TaskStatus.FAILED,
+            getattr(TaskStatus, "CANCELLED", "CANCELLED"),
+            getattr(TaskStatus, "TIMEOUT", "TIMEOUT"),
+        }
+        if task.status in _TERMINAL:
+            logger.debug(
+                "Statut ignoré (%s) pour tâche déjà terminale %s (%s)",
+                status,
+                task.name,
+                task.status,
+            )
+            return True
+
+        # Mettre à jour le statut de l'assignation (uniquement si non terminal côté VT)
+        if str(volunteer_task.status or "").upper() not in (
+            "COMPLETED",
+            "FAILED",
+            "EXPIRED",
+            "CANCEL",
+            "CANCELLED",
+        ):
+            volunteer_task.status = status
+            volunteer_task.save()
+            logger.info(
+                f"Statut de la tâche mise à jour: tâche {task.name} statut {status} par le volontaire {volunteer.name}"
+            )
+
         # Traiter les différents statuts
         if status.lower() == 'completed':
             # Toujours marquer terminé à 100 % avant traitement des fichiers
@@ -505,17 +555,34 @@ def handle_task_status(channel: str, message: Message):
                 progress_value = float(task.progress or 0)
             progress_value = max(0.0, min(100.0, progress_value))
 
+            # Ne pas repartir de 2% si on était déjà plus avancé
+            if float(task.progress or 0) >= 99.5 and progress_value < 50:
+                logger.info(
+                    "Ignore regression progress %s%% → %s%% sur tâche %s",
+                    task.progress,
+                    progress_value,
+                    task.name,
+                )
+                return True
+
             task.status = TaskStatus.RUNNING
             task.progress = max(float(task.progress or 0), progress_value)
             if not task.start_time:
                 task.start_time = timezone.now()
             task.save()
 
-            volunteer_task.status = 'RUNNING'
-            volunteer_task.progress = progress_value
-            if not volunteer_task.started_at:
-                volunteer_task.started_at = timezone.now()
-            volunteer_task.save()
+            if str(volunteer_task.status or "").upper() not in (
+                "COMPLETED",
+                "FAILED",
+                "EXPIRED",
+                "CANCEL",
+                "CANCELLED",
+            ):
+                volunteer_task.status = 'RUNNING'
+                volunteer_task.progress = max(float(volunteer_task.progress or 0), progress_value)
+                if not volunteer_task.started_at:
+                    volunteer_task.started_at = timezone.now()
+                volunteer_task.save()
 
             from websocket_service.client import notify_event
             notify_event('task_status_change', {

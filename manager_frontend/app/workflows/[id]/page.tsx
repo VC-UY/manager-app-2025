@@ -91,16 +91,21 @@ export default function WorkflowDetailPage() {
         const taskId = event.task_id || event.task?.id;
         const status = event.status || event.task?.status;
         if (taskId && status) {
+          const terminal = new Set(['COMPLETED', 'FAILED', 'CANCELLED', 'TIMEOUT']);
           setTasks((prev) =>
-            prev.map((task) =>
-              task.id === taskId
-                ? {
-                    ...task,
-                    status: status as string,
-                    progress: status === 'COMPLETED' ? 100 : task.progress,
-                  }
-                : task,
-            ),
+            prev.map((task) => {
+              if (task.id !== taskId) return task;
+              // Ne jamais rétrograder une tâche terminée (WS stale à 2%)
+              if (terminal.has(String(task.status || '').toUpperCase())
+                  && !terminal.has(String(status).toUpperCase())) {
+                return task;
+              }
+              return {
+                ...task,
+                status: status as string,
+                progress: status === 'COMPLETED' ? 100 : task.progress,
+              };
+            }),
           );
         }
         if (status === 'COMPLETED' || status === 'FAILED') {
@@ -109,10 +114,19 @@ export default function WorkflowDetailPage() {
       },
       onTaskProgress: (event) => {
         if (event.task_id != null && event.progress != null) {
+          const incoming = Number(event.progress) || 0;
           setTasks((prev) =>
-            prev.map((task) =>
-              task.id === event.task_id ? { ...task, progress: Number(event.progress) || 0 } : task,
-            ),
+            prev.map((task) => {
+              if (task.id !== event.task_id) return task;
+              const curStatus = String(task.status || '').toUpperCase();
+              if (['COMPLETED', 'FAILED', 'CANCELLED', 'TIMEOUT'].includes(curStatus)) {
+                return task;
+              }
+              // Progression monotone
+              const cur = Number(task.progress) || 0;
+              if (incoming + 0.5 < cur && cur >= 50) return task;
+              return { ...task, progress: Math.max(cur, incoming) };
+            }),
           );
         }
       },
