@@ -35,11 +35,15 @@ jobs:
             cd /opt/vc-uy
             COMPOSE_FILE=deploy/docker-compose.prod.yml
             ENV_FILE=deploy/.env.production
+
             mkdir -p deploy/scripts
             if [ -f MG/manager-app-2025/deploy-helpers/compose-up-retry.sh ]; then
               cp MG/manager-app-2025/deploy-helpers/compose-up-retry.sh deploy/scripts/compose-up-retry.sh
             fi
-            chmod +x deploy/scripts/compose-up-retry.sh
+            if [ -f MG/manager-app-2025/deploy-helpers/manager-compose-up.sh ]; then
+              cp MG/manager-app-2025/deploy-helpers/manager-compose-up.sh deploy/scripts/manager-compose-up.sh
+            fi
+            chmod +x deploy/scripts/compose-up-retry.sh deploy/scripts/manager-compose-up.sh
 
             if [ -f deploy/nginx/manager-vc-uy.conf ]; then
               cp deploy/nginx/manager-vc-uy.conf /etc/nginx/sites-available/manager-vc-uy.conf
@@ -49,9 +53,10 @@ jobs:
 
             docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build manager-backend manager-frontend
 
-            # --no-deps : ne recrée PAS coordinator-proxy (source des conflits de noms)
-            COMPOSE_UP_NO_DEPS=1 deploy/scripts/compose-up-retry.sh \
-              "$COMPOSE_FILE" "$ENV_FILE" manager-backend manager-frontend
+            # Script dédié: purge noms hashés + patch depends_on + up --no-deps ONLY manager
+            deploy/scripts/manager-compose-up.sh "$COMPOSE_FILE" "$ENV_FILE" \
+              || COMPOSE_UP_NO_DEPS=1 deploy/scripts/compose-up-retry.sh \
+                   "$COMPOSE_FILE" "$ENV_FILE" manager-backend manager-frontend
 
             for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
               if curl -sf -H "Host: manager-vc-uy.npe-techs.com" http://127.0.0.1:8002/health/; then
