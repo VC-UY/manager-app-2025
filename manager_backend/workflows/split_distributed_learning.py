@@ -38,9 +38,15 @@ def split_distributed_learning_workflow(workflow_instance: Workflow, split_logge
     input_dir = os.path.join(workflow_instance.executable_path or "/tmp", "inputs")
     os.makedirs(input_dir, exist_ok=True)
 
+    from django.conf import settings
     from redis_communication.utils import get_local_ip
 
-    public_host = get_local_ip() or os.environ.get("DL_MANAGER_PUBLIC_HOST", "127.0.0.1")
+    public_host = (
+        os.environ.get("DL_MANAGER_PUBLIC_HOST")
+        or getattr(settings, "DL_MANAGER_PUBLIC_HOST", None)
+        or get_local_ip()
+        or "127.0.0.1"
+    )
     dl_port = start_for_workflow(workflow_instance, public_host=public_host)
 
     metadata.update(
