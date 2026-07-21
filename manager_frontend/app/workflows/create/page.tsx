@@ -13,6 +13,7 @@ const workflowTypes = [
   { value: 'MATRIX_ADDITION', label: 'Addition de matrices de grande taille', icon: HiOutlineCalculator },
   { value: 'MATRIX_MULTIPLICATION', label: 'Multiplication de matrices de grande taille', icon: HiOutlineCube },
   { value: 'ML_TRAINING', label: 'Entraînement de modèle machine learning', icon: HiOutlineChip },
+  { value: 'DISTRIBUTED_LEARNING', label: 'Apprentissage distribué gossip (AD-PSGD)', icon: HiOutlineChip },
   { value: 'OPEN_MALARIA', label: 'Simulation de propagation de la malaria', icon: HiOutlineBeaker },
 { value: 'CUSTOM', label: 'Workflow personnalisé', icon: HiOutlineCog }
 
@@ -31,10 +32,17 @@ export default function CreateWorkflowPage() {
     priority: 1,
     max_execution_time: 3600,
     retry_count: 3,
-    // CUSTOM uniquement — obligatoires pour un vrai workflow
+    // CUSTOM uniquement — commande réelle, exécution via bundle vc-uyr
     custom_command: '',
-    custom_docker_image: '',
     custom_num_tasks: 8,
+    dl_n_volunteers: 3,
+    dl_max_rounds: 10,
+    dl_gossip_interval: 30,
+    dl_model: 'resnet18',
+    dl_dataset: 'cifar10',
+    dl_partition: 'iid',
+    dl_compression: 'jointsq',
+    dl_local_epochs: 1,
   });
 
   const [loading, setLoading] = useState(false);
@@ -48,7 +56,8 @@ export default function CreateWorkflowPage() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     
-    if (name === 'priority' || name === 'max_execution_time' || name === 'retry_count' || name === 'custom_num_tasks') {
+    if (name === 'priority' || name === 'max_execution_time' || name === 'retry_count' || name === 'custom_num_tasks'
+      || name === 'dl_n_volunteers' || name === 'dl_max_rounds' || name === 'dl_gossip_interval' || name === 'dl_local_epochs') {
       const numValue = parseInt(value, 10);
       setFormData(prev => ({
         ...prev,
@@ -165,20 +174,14 @@ export default function CreateWorkflowPage() {
     try {
       if (formData.workflow_type === 'CUSTOM') {
         const cmd = formData.custom_command.trim();
-        const image = formData.custom_docker_image.trim();
         if (!cmd || cmd === 'true' || cmd.toLowerCase().startsWith('echo ')) {
           setError('Workflow personnalisé : indiquez une commande réelle (ex. python app.py).');
           setLoading(false);
           return;
         }
-        if (!image || image === 'vcuy-custom:latest') {
-          setError('Workflow personnalisé : indiquez une image Docker réelle (ex. python:3.12-slim).');
-          setLoading(false);
-          return;
-        }
       }
 
-      const { custom_command, custom_docker_image, custom_num_tasks, ...base } = formData;
+      const { custom_command, custom_num_tasks, ...base } = formData;
       const dataToSubmit: Record<string, unknown> = {
         ...base,
         priority: isNaN(formData.priority) ? 1 : formData.priority,
@@ -187,17 +190,30 @@ export default function CreateWorkflowPage() {
       };
 
       if (formData.workflow_type === 'CUSTOM') {
-        const image = custom_docker_image.trim();
-        const [name, tag] = image.includes(':') ? image.split(':') : [image, 'latest'];
         dataToSubmit.metadata = {
           command: custom_command.trim(),
-          num_tasks: Math.max(1, Math.min(64, custom_num_tasks || 1)),
-          docker_info: {
-            name,
-            tag: tag || 'latest',
-            image_name: image.includes(':') ? image : `${image}:latest`,
-          },
+          num_tasks: Math.max(7, Math.min(64, custom_num_tasks || 8)),
+          runtime: 'vc-uyr',
+          bundle: true,
+          docker_info: { runtime: 'vc-uyr', bundle: true },
         };
+      }
+
+      if (formData.workflow_type === 'DISTRIBUTED_LEARNING') {
+        dataToSubmit.metadata = {
+          n_volunteers: Math.max(2, Math.min(32, formData.dl_n_volunteers || 3)),
+          max_rounds: Math.max(1, formData.dl_max_rounds || 10),
+          gossip_interval: Math.max(10, formData.dl_gossip_interval || 30),
+          model: formData.dl_model || 'resnet18',
+          dataset: formData.dl_dataset || 'cifar10',
+          partition: formData.dl_partition || 'iid',
+          compression: formData.dl_compression || 'jointsq',
+          local_epochs: Math.max(1, formData.dl_local_epochs || 1),
+          runtime: 'vc-uyr',
+        };
+        if (!dataToSubmit.executable_path) {
+          dataToSubmit.executable_path = '/tmp/vcuy-dl';
+        }
       }
 
       const response = await workflowService.createWorkflow(dataToSubmit);
@@ -409,11 +425,48 @@ export default function CreateWorkflowPage() {
                       {formData.workflow_type === 'MATRIX_ADDITION' && "Ce type de workflow est optimisé pour les additions de matrices de grande taille."}
                       {formData.workflow_type === 'MATRIX_MULTIPLICATION' && "Ce type de workflow est optimisé pour les multiplications de matrices de grande taille."}
                       {formData.workflow_type === 'OPEN_MALARIA' && "Ce type de workflow est optimisé pour les simulations épidémiologiques complexes."}
-                      {formData.workflow_type === 'CUSTOM' && "Commande réelle + image Docker obligatoires. Aucun workflow vide n'est accepté."}
+                      {formData.workflow_type === 'DISTRIBUTED_LEARNING' && "Apprentissage distribué gossip (AD-PSGD) sur volontaires VC-UY via runtime vc-uyr — sans Docker."}
+                      {formData.workflow_type === 'CUSTOM' && "Commande réelle exécutée via bundle vc-uyr sur les volontaires. Aucun workflow vide n'est accepté."}
                     </p>
                   </div>
                 </div>
               </div>
+
+              {formData.workflow_type === 'DISTRIBUTED_LEARNING' && (
+                <div className="mt-6 space-y-4 p-4 rounded-lg" style={{
+                  background: 'rgba(0, 212, 255, 0.08)',
+                  border: '1px solid rgba(0, 212, 255, 0.25)',
+                }}>
+                  <p className="text-sm font-medium" style={{ color: '#67E8F9' }}>
+                    Paramètres gossip (runtime vc-uyr, sans Docker)
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label htmlFor="dl_n_volunteers" className="block text-sm font-medium mb-2" style={{ color: '#CBD5E1' }}>Volontaires</label>
+                      <input id="dl_n_volunteers" name="dl_n_volunteers" type="number" min={2} max={32} value={formData.dl_n_volunteers} onChange={handleChange} className="w-full px-4 py-3 rounded-lg" style={{ background: 'rgba(15, 23, 42, 0.5)', border: '1px solid rgba(71, 85, 105, 0.4)', color: '#FFFFFF' }} />
+                    </div>
+                    <div>
+                      <label htmlFor="dl_max_rounds" className="block text-sm font-medium mb-2" style={{ color: '#CBD5E1' }}>Rounds max</label>
+                      <input id="dl_max_rounds" name="dl_max_rounds" type="number" min={1} max={100} value={formData.dl_max_rounds} onChange={handleChange} className="w-full px-4 py-3 rounded-lg" style={{ background: 'rgba(15, 23, 42, 0.5)', border: '1px solid rgba(71, 85, 105, 0.4)', color: '#FFFFFF' }} />
+                    </div>
+                    <div>
+                      <label htmlFor="dl_model" className="block text-sm font-medium mb-2" style={{ color: '#CBD5E1' }}>Modèle</label>
+                      <select id="dl_model" name="dl_model" value={formData.dl_model} onChange={handleChange} className="w-full px-4 py-3 rounded-lg" style={{ background: 'rgba(15, 23, 42, 0.5)', border: '1px solid rgba(71, 85, 105, 0.4)', color: '#FFFFFF' }}>
+                        <option value="resnet18">resnet18</option>
+                        <option value="resnet50">resnet50</option>
+                        <option value="vgg19">vgg19</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="dl_dataset" className="block text-sm font-medium mb-2" style={{ color: '#CBD5E1' }}>Dataset</label>
+                      <select id="dl_dataset" name="dl_dataset" value={formData.dl_dataset} onChange={handleChange} className="w-full px-4 py-3 rounded-lg" style={{ background: 'rgba(15, 23, 42, 0.5)', border: '1px solid rgba(71, 85, 105, 0.4)', color: '#FFFFFF' }}>
+                        <option value="cifar10">cifar10</option>
+                        <option value="cifar100">cifar100</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {formData.workflow_type === 'CUSTOM' && (
                 <div className="mt-6 space-y-4 p-4 rounded-lg" style={{
@@ -443,26 +496,10 @@ export default function CreateWorkflowPage() {
                       }}
                     />
                   </div>
-                  <div>
-                    <label htmlFor="custom_docker_image" className="block text-sm font-medium mb-2" style={{ color: '#CBD5E1' }}>
-                      Image Docker *
-                    </label>
-                    <input
-                      id="custom_docker_image"
-                      name="custom_docker_image"
-                      type="text"
-                      required
-                      value={formData.custom_docker_image}
-                      onChange={handleChange}
-                      placeholder="python:3.12-slim ou mon-registre/mon-image:1.0"
-                      className="w-full px-4 py-3 rounded-lg"
-                      style={{
-                        background: 'rgba(15, 23, 42, 0.5)',
-                        border: '1px solid rgba(71, 85, 105, 0.4)',
-                        color: '#FFFFFF',
-                      }}
-                    />
-                  </div>
+                  <p className="text-xs" style={{ color: '#94A3B8' }}>
+                    Les fichiers d&apos;entrée du workflow sont empaquetés en bundle vc-uyr au split.
+                    Placez vos scripts dans le répertoire d&apos;entrée du workflow.
+                  </p>
                   <div>
                     <label htmlFor="custom_num_tasks" className="block text-sm font-medium mb-2" style={{ color: '#CBD5E1' }}>
                       Nombre de tâches

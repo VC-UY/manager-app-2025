@@ -40,7 +40,7 @@ class Task(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
 
-    command = models.CharField(max_length=500)  # Commande à exécuter (dans le conteneur Docker)
+    command = models.CharField(max_length=500)  # Commande exécutée via bundle vc-uyr
     parameters = models.JSONField(default=list)  # Paramètres à passer à la commande
     dependencies = models.JSONField(default=list)  # Liste d’IDs de tâches dont dépend celle-ci
 
@@ -70,7 +70,7 @@ class Task(models.Model):
     results = models.JSONField(default=dict, blank=True, null=True)
     error_details = models.JSONField(default=dict, blank=True, null=True)
 
-    # Docker
+    # Runtime vc-uyr (nom legacy: docker_info transporté vers le coordinateur)
     docker_info = models.JSONField(default=dict)
 
     # Préférences de volontaires

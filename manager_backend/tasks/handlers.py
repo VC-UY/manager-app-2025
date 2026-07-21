@@ -684,10 +684,12 @@ def handle_task_status(channel: str, message: Message):
             logger.info(f"Type d'erreur: {error_type}, Message: {error_message}")
             
             # Gérer différemment selon le type d'erreur
-            if error_type.lower() == 'docker':
-                # Ignorer les erreurs Docker, elles sont généralement temporaires
-                # ou liées à l'infrastructure et non à la tâche elle-même
-                logger.info(f"Erreur Docker ignorée pour la tâche {task.name}")
+            if error_type.lower() in ('docker', 'runtime'):
+                logger.info(
+                    "Erreur runtime ignorée pour la tâche %s (legacy type=%s)",
+                    task.name,
+                    error_type,
+                )
                 
             elif error_type.lower() in ['user_pause', 'user_stop']:
                 # Erreur due à une pause ou un arrêt utilisateur

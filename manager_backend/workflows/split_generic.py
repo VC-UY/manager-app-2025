@@ -205,7 +205,7 @@ def split_ml_inference_workflow(workflow_instance, split_logger: logging.Logger)
 
 def split_custom_workflow(workflow_instance, split_logger: logging.Logger):
     """
-    Découpe un workflow CUSTOM à partir de metadata.tasks ou commande + image Docker réelles.
+    Découpe un workflow CUSTOM à partir de metadata.tasks ou commande réelle (bundle vc-uyr).
     """
     from workflows.custom_validation import validate_custom_metadata
 

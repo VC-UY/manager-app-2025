@@ -1,5 +1,6 @@
 """
 Validation stricte des workflows CUSTOM — pas de tâches factices.
+Exécution uniquement via bundles runtime vc-uyr (plus de Docker).
 """
 
 from __future__ import annotations
@@ -16,6 +17,8 @@ FAKE_COMMANDS = {
     "echo \"vc-uy custom task\"",
 }
 
+RUNTIME_BUNDLE_META = {"runtime": "vc-uyr", "bundle": True}
+
 
 def _normalize_command(cmd: str) -> str:
     return " ".join((cmd or "").strip().lower().split())
@@ -31,6 +34,23 @@ def _is_fake_command(cmd: str) -> bool:
     if n.startswith("echo ") and "vc-uy" in n:
         return True
     return False
+
+
+def _normalize_runtime_info(docker: Any) -> Dict[str, Any]:
+    """Normalise docker_info (nom legacy) vers runtime vc-uyr + bundle."""
+    if isinstance(docker, str):
+        # Ancien format image Docker — refus implicite en forçant vc-uyr
+        return dict(RUNTIME_BUNDLE_META)
+    if not isinstance(docker, dict):
+        return dict(RUNTIME_BUNDLE_META)
+    if docker.get("image_name") or docker.get("name"):
+        # Image Docker legacy explicitement refusée
+        return dict(RUNTIME_BUNDLE_META)
+    out = dict(RUNTIME_BUNDLE_META)
+    out.update({k: v for k, v in docker.items() if k in ("runtime", "bundle")})
+    out["runtime"] = "vc-uyr"
+    out["bundle"] = True
+    return out
 
 
 def validate_custom_metadata(metadata: Dict[str, Any] | None) -> Tuple[bool, str, Dict[str, Any]]:
@@ -55,31 +75,12 @@ def validate_custom_metadata(metadata: Dict[str, Any] | None) -> Tuple[bool, str
                     ),
                     meta,
                 )
-            docker = spec.get("docker_info") or meta.get("docker_info") or {}
-            uses_runtime = bool(
-                docker.get("bundle")
-                or docker.get("runtime") == "vc-uyr"
-                or spec.get("bundle")
-                or meta.get("bundle")
+            spec["docker_info"] = _normalize_runtime_info(
+                spec.get("docker_info") or meta.get("docker_info")
             )
-            image = (
-                docker.get("image_name")
-                or (
-                    f"{docker.get('name')}:{docker.get('tag', 'latest')}"
-                    if docker.get("name")
-                    else ""
-                )
-            )
-            if not uses_runtime and (not image or image in ("vcuy-custom:latest", ":latest")):
-                return (
-                    False,
-                    (
-                        f"Tâche #{i + 1}: fournissez un bundle vc-uyr "
-                        "(docker_info.runtime=vc-uyr / bundle=true) "
-                        "ou une image legacy temporaire."
-                    ),
-                    meta,
-                )
+        meta["docker_info"] = dict(RUNTIME_BUNDLE_META)
+        meta["bundle"] = True
+        meta["runtime"] = "vc-uyr"
         return True, "", meta
 
     command = (meta.get("command") or "").strip()
@@ -93,34 +94,9 @@ def validate_custom_metadata(metadata: Dict[str, Any] | None) -> Tuple[bool, str
             meta,
         )
 
-    docker = meta.get("docker_info") or {}
-    if isinstance(docker, str):
-        name, _, tag = docker.partition(":")
-        docker = {"name": name, "tag": tag or "latest", "image_name": docker if ":" in docker else f"{docker}:latest"}
-        meta["docker_info"] = docker
-
-    uses_runtime = bool(docker.get("bundle") or docker.get("runtime") == "vc-uyr" or meta.get("bundle"))
-    image_name = (
-        docker.get("image_name")
-        or (
-            f"{docker.get('name')}:{docker.get('tag', 'latest')}"
-            if docker.get("name")
-            else ""
-        )
-    )
-    if uses_runtime:
-        docker["runtime"] = "vc-uyr"
-        docker["bundle"] = True
-        meta["docker_info"] = docker
-    elif not image_name or image_name in ("vcuy-custom:latest", ":latest", "latest"):
-        # Par défaut: exécution via bundle vc-uyr (plus de Docker)
-        docker = {"runtime": "vc-uyr", "bundle": True}
-        meta["docker_info"] = docker
-    else:
-        docker.setdefault("name", image_name.split(":")[0])
-        docker.setdefault("tag", image_name.split(":")[-1] if ":" in image_name else "latest")
-        docker["image_name"] = image_name
-        meta["docker_info"] = docker
+    meta["docker_info"] = _normalize_runtime_info(meta.get("docker_info"))
+    meta["bundle"] = True
+    meta["runtime"] = "vc-uyr"
 
     try:
         num_tasks = int(meta.get("num_tasks") or 8)

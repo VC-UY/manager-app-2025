@@ -163,6 +163,11 @@ def submit_workflow_handler(workflow_id: str, callback: Optional[Callable[[Dict[
             estimated_resources = estimate_open_malaria_resources(
                 (workflow.metadata or {}).get('num_tasks', 2)
             )
+        elif workflow.workflow_type == WorkflowType.DISTRIBUTED_LEARNING:
+            from workflows.examples.distributed_learning.estimate_resources import (
+                estimate_resources as estimate_dl_resources,
+            )
+            estimated_resources = estimate_dl_resources(workflow.metadata)
         elif workflow.workflow_type == WorkflowType.CUSTOM:
             estimated_resources = estimate_custom_resources(workflow.metadata)
         else:

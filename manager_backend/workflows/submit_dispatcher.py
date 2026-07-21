@@ -22,6 +22,7 @@ SUPPORTED_SUBMIT_TYPES = {
     WorkflowType.MATRIX_ADDITION,
     WorkflowType.MATRIX_MULTIPLICATION,
     WorkflowType.OPEN_MALARIA,
+    WorkflowType.DISTRIBUTED_LEARNING,
     WorkflowType.CUSTOM,
 }
 

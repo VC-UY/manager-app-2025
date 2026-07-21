@@ -128,6 +128,7 @@ class WorkflowType(models.TextChoices):
     ML_TRAINING = 'ML_TRAINING', 'Entraînement de modèle machine learning'
     ML_INFERENCE = 'ML_INFERENCE', 'Inférence de modèle machine learning'
     OPEN_MALARIA = 'OPEN_MALARIA', 'Simulation de la propagation du paludisme'
+    DISTRIBUTED_LEARNING = 'DISTRIBUTED_LEARNING', 'Apprentissage distribué gossip (AD-PSGD)'
     CUSTOM = 'CUSTOM', 'Workflow personnalisé'
 
 

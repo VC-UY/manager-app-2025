@@ -113,8 +113,17 @@ def _aggregate_matrix(workflow: Workflow) -> bool:
 
 def aggregate_workflow_results(workflow: Workflow) -> bool:
     """Agrege les resultats des taches terminees selon le type de workflow."""
+    try:
+        if workflow.workflow_type == WorkflowType.DISTRIBUTED_LEARNING:
+            from workflows.distributed_learning_service import stop_for_workflow
+            stop_for_workflow(str(workflow.id))
+    except Exception as exc:
+        logger.warning("Arrêt service DL: %s", exc)
+
     if workflow.workflow_type == WorkflowType.ML_TRAINING:
         return _aggregate_ml_training(workflow)
+    if workflow.workflow_type == WorkflowType.DISTRIBUTED_LEARNING:
+        return _aggregate_distributed_learning(workflow)
     if workflow.workflow_type == WorkflowType.OPEN_MALARIA:
         return _aggregate_openmalaria(workflow)
     if workflow.workflow_type in (WorkflowType.MATRIX_ADDITION, WorkflowType.MATRIX_MULTIPLICATION):
@@ -191,6 +200,56 @@ def _aggregate_ml_training(workflow: Workflow) -> bool:
         return True
     except Exception as exc:
         logger.error("Echec de l'aggregation ML pour %s: %s", workflow.id, exc)
+        return False
+
+
+def _aggregate_distributed_learning(workflow: Workflow) -> bool:
+    """Consolide les statistiques gossip de chaque volontaire."""
+    try:
+        output_root = _ensure_output_dir(workflow)
+        aggregated_dir = os.path.join(output_root, "aggregated")
+        os.makedirs(aggregated_dir, exist_ok=True)
+
+        summaries = _collect_task_files(workflow, suffixes=["dl_summary.json"])
+        round_stats = []
+        for path in summaries:
+            try:
+                with open(path, encoding="utf-8") as handle:
+                    round_stats.append(json.load(handle))
+            except Exception:
+                continue
+
+        meta = workflow.metadata or {}
+        global_summary = {
+            "paradigm": "gossip_distributed_learning",
+            "methodology": (
+                "Apprentissage distribué gossip (AD-PSGD) sur volontaires VC-UY. "
+                "Chaque volontaire exécute des rounds locaux + échange de modèles "
+                "via le manager DL TCP; agrégation des métriques finales."
+            ),
+            "n_volunteers": meta.get("n_volunteers"),
+            "max_rounds": meta.get("max_rounds"),
+            "model": meta.get("model"),
+            "dataset": meta.get("dataset"),
+            "compression": meta.get("compression"),
+            "dl_manager_host": meta.get("dl_manager_host"),
+            "dl_manager_port": meta.get("dl_manager_port"),
+            "volunteer_summaries": round_stats,
+            "runtime": "vc-uyr",
+        }
+        out_path = os.path.join(aggregated_dir, "global_stats.json")
+        with open(out_path, "w", encoding="utf-8") as handle:
+            json.dump(global_summary, handle, indent=2)
+
+        logger.info(
+            "Aggregation DL workflow %s: %s résumés -> %s",
+            workflow.id,
+            len(round_stats),
+            out_path,
+        )
+        return True
+    except Exception as exc:
+        logger.error("Echec aggregation DL pour %s: %s", workflow.id, exc)
         return False
 
 
@@ -309,6 +368,12 @@ def check_and_finalize_workflow(workflow: Workflow) -> str:
         return workflow.status
 
     if counts['failed'] > 0 and counts['completed'] < counts['total']:
+        if workflow.workflow_type == WorkflowType.DISTRIBUTED_LEARNING:
+            try:
+                from workflows.distributed_learning_service import stop_for_workflow
+                stop_for_workflow(str(workflow.id))
+            except Exception as exc:
+                logger.warning("Arrêt service DL (échec): %s", exc)
         if counts['completed'] == 0:
             workflow.status = WorkflowStatus.FAILED
         else:

@@ -120,6 +120,7 @@ export default function WorkflowsPage() {
       MATRIX_ADDITION: { color: '#00D4FF', bg: 'rgba(0, 212, 255, 0.1)', label: 'Matrices' },
       MATRIX_MULTIPLICATION: { color: '#00B0F0', bg: 'rgba(0, 180, 240, 0.1)', label: 'Matrices' },
       ML_TRAINING: { color: '#00D4FF', bg: 'rgba(0, 212, 255, 0.15)', label: 'ML Training' },
+      DISTRIBUTED_LEARNING: { color: '#22D3EE', bg: 'rgba(34, 211, 238, 0.15)', label: 'DL Gossip' },
       ML_INFERENCE: { color: '#00B0F0', bg: 'rgba(0, 180, 240, 0.15)', label: 'ML Inference' },
       OPEN_MALARIA: { color: '#00FF88', bg: 'rgba(0, 255, 136, 0.1)', label: 'OpenMalaria' },
       CUSTOM: { color: '#FFA500', bg: 'rgba(255, 165, 0, 0.1)', label: 'Personnalise' },

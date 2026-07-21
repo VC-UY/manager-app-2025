@@ -21,13 +21,17 @@ SPLIT_CASES = [
   (WorkflowType.MATRIX_MULTIPLICATION, {'num_tasks': 2, 'matrix_size': 64}),
   (WorkflowType.ML_INFERENCE, {'num_tasks': 2, 'samples_per_task': 32}),
   (WorkflowType.CUSTOM, {
-      'tasks': [
-          {'name': 'Step A', 'command': 'echo A'},
-          {'name': 'Step B', 'command': 'echo B', 'dependencies': []},
-      ],
+      'command': 'python3 -c "print(1)"',
+      'num_tasks': 7,
+      'runtime': 'vc-uyr',
+      'bundle': True,
+  }),
+  (WorkflowType.DISTRIBUTED_LEARNING, {
+      'n_volunteers': 2,
+      'max_rounds': 1,
+      'runtime': 'vc-uyr',
   }),
 ]
-
 
 class Command(BaseCommand):
     help = 'Teste le découpage de tous les types de workflow supportés'
@@ -69,12 +73,22 @@ class Command(BaseCommand):
                     if workflow_type == WorkflowType.OPEN_MALARIA:
                         kwargs = {'num_tasks': 2, 'population_per_task': 100}
 
+                    dl_patch = None
+                    if workflow_type == WorkflowType.DISTRIBUTED_LEARNING:
+                        import workflows.distributed_learning_service as dls
+                        dl_patch = dls.start_for_workflow
+                        dls.start_for_workflow = lambda wf, public_host='127.0.0.1': 19999
+
                     tasks = split_workflow(
                         workflow.id,
                         workflow_type,
                         logger,
                         **kwargs,
                     )
+
+                    if dl_patch is not None:
+                        import workflows.distributed_learning_service as dls
+                        dls.start_for_workflow = dl_patch
 
                     if not tasks:
                         raise ValueError('Aucune tâche créée')
@@ -93,6 +107,12 @@ class Command(BaseCommand):
                     ))
                     failed += 1
                 finally:
+                    if workflow_type == WorkflowType.DISTRIBUTED_LEARNING:
+                        try:
+                            from workflows.distributed_learning_service import stop_for_workflow
+                            stop_for_workflow(str(workflow.id))
+                        except Exception:
+                            pass
                     Task.objects.filter(workflow=workflow).delete()
                     workflow.delete()
 

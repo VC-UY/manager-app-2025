@@ -1609,6 +1609,9 @@ def split_workflow(id: uuid.UUID, workflow_type: WorkflowType, logger, num_tasks
     elif workflow_type == WorkflowType.CUSTOM:
         from workflows.split_generic import split_custom_workflow
         tasks = split_custom_workflow(workflow_instance, logger)
+    elif workflow_type == WorkflowType.DISTRIBUTED_LEARNING:
+        from workflows.split_distributed_learning import split_distributed_learning_workflow
+        tasks = split_distributed_learning_workflow(workflow_instance, logger)
     else:
         raise ValueError(f"Type de workflow non supporté: {workflow_type}")
     
