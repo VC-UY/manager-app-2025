@@ -36,7 +36,7 @@ class Command(BaseCommand):
         parser.add_argument("--gossip-interval", type=int, default=15)
 
     def handle(self, *args, **options):
-        n_vol = max(2, int(options["n_volunteers"]))
+        n_vol = max(1, int(options["n_volunteers"]))
         max_rounds = max(1, int(options["max_rounds"]))
         wait_s = int(options["wait_minutes"]) * 60
         gossip_interval = int(options["gossip_interval"])

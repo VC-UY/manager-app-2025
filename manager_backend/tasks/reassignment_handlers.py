@@ -120,7 +120,7 @@ def handle_task_reassignment_response(channel: str, message: Message):
                     'file_server': file_server_info
                 },
                 'estimated_execution_time': task.estimated_max_time,
-                'docker_information': task.docker_info or {}
+                'runtime_info': task.runtime_info or {}
             }
             
             assignments_by_volunteer[volunteer_id].append(task_data)

@@ -26,7 +26,7 @@ def split_distributed_learning_workflow(workflow_instance: Workflow, split_logge
     Démarre le manager DL TCP et le bridge VC-UY en parallèle.
     """
     metadata = dict(workflow_instance.metadata or {})
-    n_volunteers = max(2, int(metadata.get("n_volunteers") or 3))
+    n_volunteers = max(1, int(metadata.get("n_volunteers") or 2))
     max_rounds = int(metadata.get("max_rounds") or 10)
     gossip_interval = int(metadata.get("gossip_interval") or 30)
     model_name = str(metadata.get("model") or "resnet18")
@@ -69,10 +69,12 @@ def split_distributed_learning_workflow(workflow_instance: Workflow, split_logge
 
     min_resources = get_min_volunteer_resources()
     # Besoins ML plus élevés (PyTorch)
+    # Défauts ML ; surchargeables via metadata.required_resources
+    req = metadata.get("required_resources") or {}
     min_resources = {
         **min_resources,
-        "memory_mb": max(int(min_resources.get("memory_mb", 1024)), 4096),
-        "cpu_cores": max(int(min_resources.get("cpu_cores", 1)), 2),
+        "memory_mb": int(req.get("memory_mb") or max(int(min_resources.get("memory_mb", 1024)), 2048)),
+        "cpu_cores": int(req.get("cpu_cores") or max(int(min_resources.get("cpu_cores", 1)), 1)),
     }
 
     worker_scripts = [
@@ -81,7 +83,7 @@ def split_distributed_learning_workflow(workflow_instance: Workflow, split_logge
         EXAMPLES_DIR / "volunteer_core.py",
     ]
     src_dir = EXAMPLES_DIR / "src"
-    docker_img = dict(RUNTIME_META)
+    runtime_meta = dict(RUNTIME_META)
     tasks = []
 
     estimated_seconds = max(600, max_rounds * (gossip_interval + 120))
@@ -162,7 +164,7 @@ def split_distributed_learning_workflow(workflow_instance: Workflow, split_logge
             },
             input_files=[f"volunteer_{slot}/task_bundle.tar.gz"],
             output_files=["dl_summary.json", "model_final.pt", "stats/"],
-            docker_info=docker_img,
+            runtime_info=runtime_meta,
             required_resources={
                 "cpu": min_resources.get("cpu_cores", min_resources.get("cpu", 2)),
                 "ram": min_resources.get("memory_mb", min_resources.get("ram", 4096)),

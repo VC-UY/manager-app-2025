@@ -24,7 +24,7 @@ def _base_input_dir(workflow_instance) -> str:
 
 
 def _create_task(workflow_instance, index, name, command, input_files, output_files,
-                 docker_info, required_resources, estimated_max_time, dependencies=None):
+                 runtime_info, required_resources, estimated_max_time, dependencies=None):
     task = Task.objects.create(
         workflow=workflow_instance,
         name=name,
@@ -39,7 +39,7 @@ def _create_task(workflow_instance, index, name, command, input_files, output_fi
         is_subtask=False,
         progress=0,
         start_time=None,
-        docker_info=docker_info or dict(RUNTIME_META),
+        runtime_info=runtime_info or dict(RUNTIME_META),
         required_resources=required_resources,
         estimated_max_time=estimated_max_time,
     )
@@ -123,7 +123,7 @@ def split_matrix_workflow(workflow_instance, operation: str, split_logger: loggi
             command=command,
             input_files=[bundle_rel],
             output_files=['result.pkl'],
-            docker_info=dict(RUNTIME_META),
+            runtime_info=dict(RUNTIME_META),
             required_resources={
                 'cpu': min_resources['min_cpu'],
                 'ram': max(min_resources['min_ram'], ram_mb),
@@ -186,7 +186,7 @@ def split_ml_inference_workflow(workflow_instance, split_logger: logging.Logger)
             command=command,
             input_files=[bundle_rel],
             output_files=['predictions.json'],
-            docker_info=dict(RUNTIME_META),
+            runtime_info=dict(RUNTIME_META),
             required_resources={
                 'cpu': max(1, min_resources['min_cpu']),
                 'ram': max(min_resources['min_ram'], 1024),
@@ -227,10 +227,10 @@ def split_custom_workflow(workflow_instance, split_logger: logging.Logger):
             for i in range(num_tasks)
         ]
 
-    docker_img = dict(RUNTIME_META)
-    meta_docker = metadata.get('docker_info') or {}
-    if isinstance(meta_docker, dict) and meta_docker.get('runtime') == 'vc-uyr':
-        docker_img = {**RUNTIME_META, **meta_docker}
+    runtime_meta = dict(RUNTIME_META)
+    meta_runtime = metadata.get('runtime_info') or {}
+    if isinstance(meta_runtime, dict) and meta_runtime.get('runtime') == 'vc-uyr':
+        runtime_meta = {**RUNTIME_META, **meta_runtime}
     tasks = []
     input_dir = _base_input_dir(workflow_instance)
 
@@ -263,7 +263,7 @@ def split_custom_workflow(workflow_instance, split_logger: logging.Logger):
             command=command,
             input_files=[bundle_rel],
             output_files=spec.get('output_files', []),
-            docker_info=spec.get('docker_info') or docker_img,
+            runtime_info=spec.get('runtime_info') or runtime_meta,
             required_resources=spec.get('required_resources', {
                 'cpu': min_resources['min_cpu'],
                 'ram': min_resources['min_ram'],

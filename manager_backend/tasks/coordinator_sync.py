@@ -41,7 +41,7 @@ def publish_tasks_created(workflow, tasks: Iterable, file_server_port: Optional[
                     "estimated_execution_time": float(task.estimated_max_time or 0),
                     "input_data": transfer,
                     "input_data_size": int(task.input_size or 0),
-                    "docker_information": task.docker_info or {},
+                    "runtime_info": task.runtime_info or {},
                     "workflow_type": getattr(workflow, "workflow_type", ""),
                     "parameters": params,
                     "dependencies": task.dependencies or [],

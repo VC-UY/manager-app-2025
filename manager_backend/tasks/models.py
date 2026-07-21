@@ -70,8 +70,8 @@ class Task(models.Model):
     results = models.JSONField(default=dict, blank=True, null=True)
     error_details = models.JSONField(default=dict, blank=True, null=True)
 
-    # Runtime vc-uyr (nom legacy: docker_info transporté vers le coordinateur)
-    docker_info = models.JSONField(default=dict)
+    # Métadonnées d'exécution (runtime vc-uyr / bundle)
+    runtime_info = models.JSONField(default=dict)
 
     # Préférences de volontaires
     volunteer_preference = models.CharField(

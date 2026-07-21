@@ -195,7 +195,7 @@ export default function CreateWorkflowPage() {
           num_tasks: Math.max(7, Math.min(64, custom_num_tasks || 8)),
           runtime: 'vc-uyr',
           bundle: true,
-          docker_info: { runtime: 'vc-uyr', bundle: true },
+          runtime_info: { runtime: 'vc-uyr', bundle: true },
         };
       }
 

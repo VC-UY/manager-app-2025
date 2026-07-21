@@ -266,7 +266,7 @@ def publish_assignments(
                     "estimated_execution_time": task.estimated_max_time,
                     "input_data": transfer,
                     "input_data_size": task.input_size,
-                    "docker_information": task.docker_info or {},
+                    "runtime_info": task.runtime_info or {},
                 }
             )
         if not enriched:

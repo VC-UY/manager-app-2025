@@ -36,18 +36,17 @@ def _is_fake_command(cmd: str) -> bool:
     return False
 
 
-def _normalize_runtime_info(docker: Any) -> Dict[str, Any]:
-    """Normalise docker_info (nom legacy) vers runtime vc-uyr + bundle."""
-    if isinstance(docker, str):
-        # Ancien format image Docker — refus implicite en forçant vc-uyr
+def _normalize_runtime_info(info: Any) -> Dict[str, Any]:
+    """Normalise runtime_info vers runtime vc-uyr + bundle."""
+    if isinstance(info, str):
         return dict(RUNTIME_BUNDLE_META)
-    if not isinstance(docker, dict):
+    if not isinstance(info, dict):
         return dict(RUNTIME_BUNDLE_META)
-    if docker.get("image_name") or docker.get("name"):
-        # Image Docker legacy explicitement refusée
+    if info.get("image_name") or info.get("name"):
+        # Ancien format image — forcer vc-uyr
         return dict(RUNTIME_BUNDLE_META)
     out = dict(RUNTIME_BUNDLE_META)
-    out.update({k: v for k, v in docker.items() if k in ("runtime", "bundle")})
+    out.update({k: v for k, v in info.items() if k in ("runtime", "bundle")})
     out["runtime"] = "vc-uyr"
     out["bundle"] = True
     return out
@@ -75,10 +74,10 @@ def validate_custom_metadata(metadata: Dict[str, Any] | None) -> Tuple[bool, str
                     ),
                     meta,
                 )
-            spec["docker_info"] = _normalize_runtime_info(
-                spec.get("docker_info") or meta.get("docker_info")
+            spec["runtime_info"] = _normalize_runtime_info(
+                spec.get("runtime_info") or meta.get("runtime_info")
             )
-        meta["docker_info"] = dict(RUNTIME_BUNDLE_META)
+        meta["runtime_info"] = dict(RUNTIME_BUNDLE_META)
         meta["bundle"] = True
         meta["runtime"] = "vc-uyr"
         return True, "", meta
@@ -94,7 +93,7 @@ def validate_custom_metadata(metadata: Dict[str, Any] | None) -> Tuple[bool, str
             meta,
         )
 
-    meta["docker_info"] = _normalize_runtime_info(meta.get("docker_info"))
+    meta["runtime_info"] = _normalize_runtime_info(meta.get("runtime_info"))
     meta["bundle"] = True
     meta["runtime"] = "vc-uyr"
 

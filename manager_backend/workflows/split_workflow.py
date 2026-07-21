@@ -1310,7 +1310,7 @@ def split_ml_training_workflow(workflow_instance: Workflow, logger: logging.Logg
 
     from workflows.bundle_builder import RUNTIME_META, package_files_as_bundle
 
-    docker_img = dict(RUNTIME_META)
+    runtime_meta = dict(RUNTIME_META)
     worker_script = Path(__file__).resolve().parent / "examples" / "ml_training" / "train_on_shard.py"
     tasks = []
     for i in range(num_shards):
@@ -1348,7 +1348,7 @@ def split_ml_training_workflow(workflow_instance: Workflow, logger: logging.Logg
             is_subtask=False,
             progress=0,
             start_time=None,
-            docker_info=docker_img,
+            runtime_info=runtime_meta,
             required_resources={
                 "cpu": min_resources["min_cpu"],
                 "ram": max(min_resources["min_ram"], 2048),
@@ -1405,7 +1405,7 @@ def split_openmalaria_workflow(
     os.makedirs(input_dir, exist_ok=True)
     min_resources = get_min_volunteer_resources()
     # Plus d'image Docker : exécution via bundle self-contained vc-uyr
-    docker_img = {
+    runtime_meta = {
         "runtime": "vc-uyr",
         "bundle": True,
     }
@@ -1530,7 +1530,7 @@ def split_openmalaria_workflow(
             is_subtask=False,
             progress=0,
             start_time=None,
-            docker_info=docker_img,
+            runtime_info=runtime_meta,
             required_resources={
                 "cpu": min_resources["min_cpu"],
                 "ram": max(min_resources["min_ram"], 2048),
