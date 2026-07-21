@@ -16,7 +16,9 @@ import uuid
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
+from tasks.file_server import start_file_server
 from tasks.models import Task, TaskStatus
+from tasks.coordinator_sync import publish_tasks_created, publish_workflow_tasks_ready
 from workflows.handlers import submit_workflow_handler
 from workflows.models import Workflow, WorkflowStatus, WorkflowType, User
 from workflows.split_workflow import split_workflow
@@ -86,11 +88,22 @@ class Command(BaseCommand):
         for t in tasks:
             self.stdout.write(f"  - {t.name} | {t.command} | bundle={t.input_files}")
 
+        server_port = start_file_server(wf)
+        self.stdout.write(self.style.NOTICE(f"Serveur fichiers démarré port {server_port}"))
+
         ok, result = submit_workflow_handler(str(wf.id), timeout=120)
         if not ok:
             self.stdout.write(self.style.ERROR(f"Soumission échouée: {result}"))
             raise SystemExit(1)
         self.stdout.write(self.style.SUCCESS(f"Soumis au coordinateur: {result}"))
+
+        published = publish_tasks_created(wf, tasks, server_port)
+        publish_workflow_tasks_ready(
+            wf,
+            message=f"E2E DL — {published} tâche(s) gossip prêtes",
+            file_server_port=server_port,
+        )
+        self.stdout.write(self.style.SUCCESS(f"Tâches publiées au coordinateur: {published}"))
 
         wf.status = WorkflowStatus.RUNNING
         wf.save(update_fields=["status", "updated_at"])
