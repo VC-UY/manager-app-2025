@@ -22,6 +22,9 @@ def publish_tasks_created(workflow, tasks: Iterable, file_server_port: Optional[
     for task in tasks:
         try:
             transfer = build_task_file_transfer_info(workflow, task, file_server_port)
+            params = task.parameters or []
+            if isinstance(params, dict):
+                params = [params]
             proxy_publish(
                 "task/created",
                 {
@@ -40,7 +43,7 @@ def publish_tasks_created(workflow, tasks: Iterable, file_server_port: Optional[
                     "input_data_size": int(task.input_size or 0),
                     "docker_information": task.docker_info or {},
                     "workflow_type": getattr(workflow, "workflow_type", ""),
-                    "parameters": task.parameters or [],
+                    "parameters": params,
                     "dependencies": task.dependencies or [],
                     "is_subtask": bool(task.is_subtask),
                 },
