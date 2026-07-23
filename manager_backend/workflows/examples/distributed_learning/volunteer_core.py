@@ -84,11 +84,18 @@ class Volunteer:
                  my_ip: str = "",
                  cpu_cores: Optional[int] = None,
                  ram_gb: Optional[float] = None,
-                 network_bandwidth_mbps: Optional[float] = None):
+                 network_bandwidth_mbps: Optional[float] = None,
+                 manager_port: Optional[int] = None):
         self.vol_id = volunteer_id
         self.n_volunteers = n_volunteers
         self.coord_host = coordinator_host
         self.manager_host = manager_host
+        # Port dynamique par workflow (dl_config) — pas le MANAGER_PORT figé à l'import.
+        self.manager_port = int(
+            manager_port
+            or os.environ.get("MANAGER_PORT")
+            or MANAGER_PORT
+        )
         self.my_ip = my_ip or self._detect_ip(coordinator_host)
 
         # ── PROFILEUR AVANCÉ : baseline AVANT chargement des données/modèle ──
@@ -96,18 +103,22 @@ class Volunteer:
         self.adv_profiler.capture_baseline()
 
         # Identité réseau
-        # Si on a un volunteer_id > 0, on le reflète dans l'adresse MAC
-        # pour éviter les collisions lors de simulations locales sur la même machine.
-        base_mac = get_mac_address()
-        if self.vol_id > 0:
-            parts = base_mac.split(":")
-            if len(parts) == 6:
-                parts[-1] = f"{self.vol_id:02X}"
-                self.my_mac = ":".join(parts)
-            else:
-                self.my_mac = f"{base_mac[:-2]}{self.vol_id:02X}"
+        # VCUY_E2E_MAC (lab / multi-vols même machine) prime sur le MAC matériel.
+        # Sinon, volunteer_id > 0 remappe le dernier octet pour éviter les collisions.
+        e2e_mac = os.environ.get("VCUY_E2E_MAC", "").strip()
+        if e2e_mac:
+            self.my_mac = e2e_mac.upper()
         else:
-            self.my_mac = base_mac
+            base_mac = get_mac_address()
+            if self.vol_id > 0:
+                parts = base_mac.split(":")
+                if len(parts) == 6:
+                    parts[-1] = f"{self.vol_id:02X}"
+                    self.my_mac = ":".join(parts)
+                else:
+                    self.my_mac = f"{base_mac[:-2]}{self.vol_id:02X}"
+            else:
+                self.my_mac = base_mac
         self.resources = get_resource_info(
             cpu_cores=cpu_cores, ram_gb=ram_gb,
             network_bandwidth_mbps=network_bandwidth_mbps,
@@ -122,8 +133,12 @@ class Volunteer:
         random.seed(42)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = create_model(MODEL_NAME, NUM_CLASSES).to(self.device)
+        data_dir = (
+            (os.environ.get("VCUY_DATASET_CACHE") or "").strip()
+            or os.path.join(os.path.dirname(__file__), "data")
+        )
         self.train_loader, self.test_loader = load_dataset(
-            dataset=DATASET, data_dir=os.path.join(os.path.dirname(__file__), "data"),
+            dataset=DATASET, data_dir=data_dir,
             volunteer_id=self.vol_id, n_volunteers=self.n_volunteers,
             partition=DATA_PARTITION, batch_size=BATCH_SIZE,
         )
@@ -212,7 +227,7 @@ class Volunteer:
         self.model_profiler.start_training_tracking()
 
         logging.info(f"[Volontaire {self.vol_id}] MAC={self.my_mac} IP={self.my_ip} "
-                     f"device={self.device}")
+                     f"manager={self.manager_host}:{self.manager_port} device={self.device}")
 
     # ─── Estimation des ressources ──────────────────────────────────────────
     def _estimate_resources_vs_needs(self) -> Dict:
@@ -436,7 +451,7 @@ class Volunteer:
     def _open_manager_conn(self) -> socket.socket:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(SOCKET_TIMEOUT)
-        s.connect((self.manager_host, MANAGER_PORT))
+        s.connect((self.manager_host, self.manager_port))
         return s
 
     def _fetch_active_volunteers(self) -> List[str]:
@@ -822,6 +837,9 @@ class Volunteer:
 
         peers = self._select_neighbors(candidates)
 
+        # Pull d'abord : récupérer les modèles déjà en file pendant notre train.
+        received_states = self._poll_received_models()
+
         if peers:
             compressed_bytes, meta = compress_model(
                 self.model, method=COMPRESSION,
@@ -868,8 +886,20 @@ class Volunteer:
         else:
             logging.warning(f"[Volontaire {self.vol_id}] Aucun voisin -> envoi sauté.")
 
-        # 3. Réception + filtrage + agrégation
-        received_states = self._poll_received_models()
+        # Pull après push : l'autre volontaire peut finir son upload juste après nous.
+        # Sur liens lents (~20-50 Mo), attendre quelques dizaines de secondes.
+        for attempt in range(8):
+            more = self._poll_received_models()
+            if more:
+                received_states.extend(more)
+                logging.info(
+                    f"[Volontaire {self.vol_id}] Modèles reçus après envoi "
+                    f"(tentative {attempt + 1}): {len(more)}"
+                )
+                break
+            if attempt < 7:
+                time.sleep(5)
+
         received_states = self._filter_received_states(received_states)
 
         if ADPSGD_ENABLED:

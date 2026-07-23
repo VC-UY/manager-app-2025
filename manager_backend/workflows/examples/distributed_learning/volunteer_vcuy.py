@@ -28,14 +28,21 @@ def run_volunteer(
 ) -> None:
     """Lance le cycle gossip en mode VC-UY (sans heartbeat coordinateur DL)."""
     os.environ["MANAGER_PORT"] = str(manager_port)
+    os.environ["MANAGER_HOST"] = str(manager_host)
 
     import volunteer_core as _core
+    # Recharger config après setenv (évite MANAGER_PORT figé à l'import)
+    import importlib
+    import src.config as _cfg
+    importlib.reload(_cfg)
+    importlib.reload(_core)
 
     vol = _core.Volunteer(
         volunteer_id=volunteer_id,
         n_volunteers=n_volunteers,
         coordinator_host=manager_host,
         manager_host=manager_host,
+        manager_port=manager_port,
         my_ip=my_ip,
         cpu_cores=cpu_cores,
         ram_gb=ram_gb,

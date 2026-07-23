@@ -37,6 +37,10 @@ def split_distributed_learning_workflow(workflow_instance: Workflow, split_logge
 
     input_dir = os.path.join(workflow_instance.executable_path or "/tmp", "inputs")
     os.makedirs(input_dir, exist_ok=True)
+    # Aligne input_path sur le dossier servi par /api/workflow-files/
+    if (workflow_instance.input_path or "").rstrip("/") != input_dir.rstrip("/"):
+        workflow_instance.input_path = input_dir
+        workflow_instance.save(update_fields=["input_path", "updated_at"])
 
     from django.conf import settings
     from redis_communication.utils import get_local_ip
@@ -110,6 +114,23 @@ def split_distributed_learning_workflow(workflow_instance: Workflow, split_logge
                 "MANAGER_HOST": public_host,
                 "MANAGER_PORT": str(dl_port),
                 "VCUY_SKIP_DL_COORDINATOR": "1",
+                # Laisser le temps aux 2 vols de charger CIFAR avant solitude.
+                "PEER_TIMEOUT": str(metadata.get("peer_timeout") or "300"),
+                # Envoi modèle compressé (~20-50 Mo) vers le manager TCP.
+                "SOCKET_TIMEOUT": str(metadata.get("socket_timeout") or "600"),
+                # CIFAR non inclus dans le bundle ; autorise torchvision download 1×.
+                "ALLOW_DATASET_DOWNLOAD": str(
+                    metadata.get("allow_dataset_download", "1")
+                ),
+                "VCUY_FAKE_DATASET": "1"
+                if str(metadata.get("dataset", "")).lower() in {"fake", "synthetic"}
+                else str(metadata.get("vcuy_fake_dataset", "0")),
+                # Sous-échantillon optionnel (E2E) — CIFAR reste réel.
+                "VCUY_MAX_TRAIN_SAMPLES": str(
+                    metadata.get("max_train_samples")
+                    or metadata.get("vcuy_max_train_samples")
+                    or ""
+                ),
             },
         }
         config_path = os.path.join(slot_dir, "dl_config.json")

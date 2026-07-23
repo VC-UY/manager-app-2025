@@ -59,9 +59,17 @@ def serve_workflow_input_file(request, workflow_id, file_path):
 
     full_path = _safe_join(base_dir, file_path)
     if not os.path.isfile(full_path):
-        # Compat: parfois le chemin demandé inclut déjà "inputs/"
+        # Compat: chemin demandé avec ou sans préfixe "inputs/"
+        # (input_path peut être la racine workflow OU le dossier inputs/).
+        candidates = []
         if file_path.startswith("inputs/"):
-            full_path = _safe_join(base_dir, file_path[len("inputs/") :])
+            candidates.append(_safe_join(base_dir, file_path[len("inputs/") :]))
+        else:
+            candidates.append(_safe_join(base_dir, os.path.join("inputs", file_path)))
+        for cand in candidates:
+            if os.path.isfile(cand):
+                full_path = cand
+                break
         if not os.path.isfile(full_path):
             raise Http404("Fichier introuvable")
 

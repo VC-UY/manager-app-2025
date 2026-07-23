@@ -70,6 +70,34 @@ def resolve_data_dir(data_dir: str) -> str:
     return str(candidate)
 
 
+def default_dataset_cache() -> str:
+    """Cache partagé machine (préparé par install-volontaire / one-command)."""
+    env = (os.getenv("VCUY_DATASET_CACHE") or "").strip()
+    if env:
+        return str(Path(env).expanduser())
+    return str(Path.home() / ".vcuy" / "datasets")
+
+
+def resolve_dataset_root(data_dir: str, dataset_name: str) -> str:
+    """
+    Préfère un cache machine déjà peuplé (pas de re-téléchargement par tâche).
+    Ordre : VCUY_DATASET_CACHE → ~/.vcuy/datasets → data_dir de la tâche.
+    """
+    ds = dataset_name.lower().strip()
+    candidates = []
+    cache = default_dataset_cache()
+    if cache:
+        candidates.append(cache)
+    resolved = resolve_data_dir(data_dir)
+    if resolved not in candidates:
+        candidates.append(resolved)
+    for cand in candidates:
+        if _dataset_files_present(cand, ds):
+            logging.info("[Dataset] Cache/local trouvé : %s", cand)
+            return cand
+    return resolved
+
+
 def _dataset_files_present(data_dir: str, dataset_name: str) -> bool:
     ds = dataset_name.lower().strip()
     if ds == "cifar10":
@@ -98,6 +126,24 @@ def _try_load_dataset_or_raise(data_dir: str, dataset_name: str):
     )
 
 
+def _load_fake_cifar(n_train: int = 256, n_test: int = 64):
+    """Dataset synthétique 32×32 pour smoke E2E sans téléchargement."""
+    import torch
+    from torch.utils.data import TensorDataset
+
+    def _make(n: int):
+        images = torch.randn(n, 3, 32, 32)
+        labels = torch.randint(0, 10, (n,))
+        return TensorDataset(images, labels)
+
+    train_ds = _make(n_train)
+    test_ds = _make(n_test)
+    # Compat partition non-iid / iid (attend .targets)
+    train_ds.targets = [int(y) for y in train_ds.tensors[1].tolist()]
+    test_ds.targets = [int(y) for y in test_ds.tensors[1].tolist()]
+    return train_ds, test_ds
+
+
 def load_dataset(dataset: str,
                  data_dir: str,
                  volunteer_id: int,
@@ -109,7 +155,7 @@ def load_dataset(dataset: str,
     Les données test sont complètes pour tous les volontaires (évaluation globale).
 
     Args:
-        dataset      : 'cifar10', 'cifar100' ou 'imagenet'.
+        dataset      : 'cifar10', 'cifar100', 'imagenet' ou 'fake'.
         data_dir     : répertoire racine pour les données téléchargées.
         volunteer_id : indice du volontaire (0-indexé).
         n_volunteers : nombre total de volontaires.
@@ -119,26 +165,34 @@ def load_dataset(dataset: str,
     Returns:
         (train_loader, test_loader)
     """
-    resolved_data_dir = resolve_data_dir(data_dir)
-    os.makedirs(resolved_data_dir, exist_ok=True)
     ds = dataset.lower().strip()
-
-    if ds == "cifar10":
-        allow_download = _try_load_dataset_or_raise(resolved_data_dir, ds)
-        train_ds, test_ds = _load_cifar10(resolved_data_dir, download=allow_download)
-
-    elif ds == "cifar100":
-        allow_download = _try_load_dataset_or_raise(resolved_data_dir, ds)
-        train_ds, test_ds = _load_cifar100(resolved_data_dir, download=allow_download)
-
-    elif ds == "imagenet":
-        train_ds, test_ds = _load_imagenet(resolved_data_dir)
-
+    # Smoke E2E / machines sans CIFAR préchargé
+    if ds in {"fake", "synthetic"} or os.getenv("VCUY_FAKE_DATASET", "").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        logging.info("[Dataset] Mode synthétique (VCUY_FAKE_DATASET / dataset=fake)")
+        train_ds, test_ds = _load_fake_cifar()
+        ds = "cifar10"
+        resolved_data_dir = resolve_data_dir(data_dir)
     else:
-        raise ValueError(
-            f"Dataset inconnu : '{dataset}'. "
-            f"Datasets supportés : {list(DATASET_NUM_CLASSES.keys())}"
-        )
+        resolved_data_dir = resolve_dataset_root(data_dir, ds)
+        os.makedirs(resolved_data_dir, exist_ok=True)
+        if ds == "cifar10":
+            allow_download = _try_load_dataset_or_raise(resolved_data_dir, ds)
+            train_ds, test_ds = _load_cifar10(resolved_data_dir, download=allow_download)
+        elif ds == "cifar100":
+            allow_download = _try_load_dataset_or_raise(resolved_data_dir, ds)
+            train_ds, test_ds = _load_cifar100(resolved_data_dir, download=allow_download)
+        elif ds == "imagenet":
+            train_ds, test_ds = _load_imagenet(resolved_data_dir)
+        else:
+            raise ValueError(
+                f"Dataset inconnu : '{dataset}'. "
+                f"Datasets supportés : {list(DATASET_NUM_CLASSES.keys())} + fake"
+            )
 
     # ── Targets pour la partition ──────────────────────────────────────────
     if hasattr(train_ds, "targets"):
@@ -155,6 +209,20 @@ def load_dataset(dataset: str,
         indices = _non_iid_partition(targets, volunteer_id, n_volunteers)
     else:
         raise ValueError(f"Partition inconnue : '{partition}'. Valeurs : 'iid', 'non-iid'.")
+
+    # Limite optionnelle (E2E / machines modestes) — dataset réel, sous-échantillon.
+    max_samples = (os.getenv("VCUY_MAX_TRAIN_SAMPLES") or "").strip()
+    if max_samples.isdigit() and int(max_samples) > 0:
+        cap = int(max_samples)
+        if len(indices) > cap:
+            rng = np.random.default_rng(42 + int(volunteer_id))
+            indices = rng.choice(indices, size=cap, replace=False)
+            indices = np.sort(indices).tolist()
+            logging.info(
+                "[Dataset] Sous-échantillon VCUY_MAX_TRAIN_SAMPLES=%s → %s exemples",
+                cap,
+                len(indices),
+            )
 
     train_subset = Subset(train_ds, indices)
     labels = np.unique(targets[indices]).tolist()

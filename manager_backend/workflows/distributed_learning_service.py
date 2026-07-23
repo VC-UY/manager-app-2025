@@ -125,7 +125,13 @@ def _run_manager(manager_port: int, stop: threading.Event) -> None:
     os.environ["MANAGER_PORT"] = str(manager_port)
 
     try:
-        from manager_core import Manager
+        import importlib
+        import manager_core as _mgr_mod
+
+        # Recharger à chaque workflow pour appliquer les hotfixes docker cp
+        # sans redémarrer tout le process Django.
+        importlib.reload(_mgr_mod)
+        Manager = _mgr_mod.Manager
 
         mgr = Manager()
         mgr._running = True

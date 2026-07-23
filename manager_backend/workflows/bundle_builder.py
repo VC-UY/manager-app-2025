@@ -23,8 +23,10 @@ export OUTPUT_DIR="${vc_OUTPUT:-$SCRIPT_DIR/output}"
 export INPUT_DIR="${vc_INPUT:-$SCRIPT_DIR}"
 mkdir -p "$OUTPUT_DIR"
 
+# Copie uniquement les fichiers à la racine de vc_INPUT (pas les sous-dossiers).
+# Un flatten récursif écrase la stdlib Python 3.14+ (ex. compression.py vs compression/).
 if [ -n "${vc_INPUT:-}" ] && [ -d "$vc_INPUT" ]; then
-  find "$vc_INPUT" -maxdepth 3 -type f 2>/dev/null | while read -r src; do
+  find "$vc_INPUT" -maxdepth 1 -type f 2>/dev/null | while read -r src; do
     base="$(basename "$src")"
     if [ ! -f "$SCRIPT_DIR/$base" ]; then
       cp -f "$src" "$SCRIPT_DIR/$base" || true
@@ -40,7 +42,13 @@ def write_run_sh(dest_dir: str | Path, command: str) -> Path:
     dest = Path(dest_dir)
     dest.mkdir(parents=True, exist_ok=True)
     run_sh = dest / "run.sh"
-    content = DEFAULT_RUN_SH.replace("__COMMAND__", (command or "true").strip() or "true")
+    cmd = (command or "true").strip() or "true"
+    # Permet au runtime local d'injecter le Python du venv (torch, etc.)
+    if cmd.startswith("python3 "):
+        cmd = "${VCUY_PYTHON:-python3} " + cmd[len("python3 ") :]
+    elif cmd == "python3":
+        cmd = "${VCUY_PYTHON:-python3}"
+    content = DEFAULT_RUN_SH.replace("__COMMAND__", cmd)
     run_sh.write_text(content, encoding="utf-8")
     run_sh.chmod(0o755)
     return run_sh

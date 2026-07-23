@@ -64,6 +64,9 @@ class Manager:
 
         # Mapping IP courant → MAC (pour supporter les changements d'IP)
         self._ip_to_mac: Dict[str, str] = {}
+        # MACs vues via TCP (neighbors/poll/send) — ne pas les purger
+        # quand le bridge VC-UY envoie des MAC hashées différentes.
+        self._self_registered: set = set()
 
         # file par MAC destinataire : Queue[(sender_mac, payload_bytes, metadata_dict)]
         self._queues: Dict[str, queue.Queue] = defaultdict(queue.Queue)
@@ -181,6 +184,11 @@ class Manager:
 
     def _resolve_mac(self, ip_or_mac: str) -> Optional[str]:
         """Résout une IP ou un MAC vers le MAC connu du volontaire."""
+        if not ip_or_mac:
+            return None
+        # Normaliser les MAC (volontaires / bridge peuvent différer en casse)
+        if ":" in ip_or_mac:
+            ip_or_mac = ip_or_mac.upper()
         if ip_or_mac in self._ip_to_mac:
             return self._ip_to_mac[ip_or_mac]
         if ip_or_mac in self._volunteers:
@@ -189,6 +197,51 @@ class Manager:
             if node.current_ip == ip_or_mac:
                 return mac
         return None
+
+    def _ensure_volunteer(self, mac: str, ip: str = "") -> Optional[str]:
+        """Enregistre (ou rafraîchit) un volontaire vu via TCP.
+
+        Le bridge VC-UY invente des MAC hash(volunteer_id) alors que les
+        volontaires DL s'annoncent avec leur MAC matérielle / VCUY_E2E_MAC.
+        Sans auto-enregistrement, le peer sampling renvoie 0 voisins.
+        """
+        if not mac or ":" not in str(mac):
+            return None
+        mac = str(mac).upper()
+        now = time.time()
+        if mac in self._volunteers:
+            node = self._volunteers[mac]
+            node.last_heartbeat = now
+            if ip:
+                old_ip = node.current_ip
+                if old_ip and old_ip in self._ip_to_mac and self._ip_to_mac.get(old_ip) == mac:
+                    del self._ip_to_mac[old_ip]
+                node.current_ip = ip
+                self._ip_to_mac[ip] = mac
+            self._self_registered.add(mac)
+            return mac
+
+        from src.volunteer_node import ResourceInfo
+        node = VolunteerNode(
+            mac_address=mac,
+            current_ip=ip or None,
+            last_heartbeat=now,
+            resources=ResourceInfo(
+                cpu_cores=4,
+                cpu_freq_ghz=2.0,
+                ram_gb=8.0,
+                network_bandwidth_mbps=50.0,
+                battery=100.0,
+                disk_free_gb=20.0,
+                cpu_load=0.0,
+            ),
+        )
+        self._volunteers[mac] = node
+        if ip:
+            self._ip_to_mac[ip] = mac
+        self._self_registered.add(mac)
+        logging.info(f"Volontaire auto-enregistré (TCP) : MAC={mac} IP={ip or '?'}")
+        return mac
 
     def _compute_bandwidth_reward(self, mac: str, current_summary: dict) -> float:
         """Calcule un reward de bande passante en Mbps pour SW-UCB."""
@@ -263,11 +316,21 @@ class Manager:
                 except Exception as e:
                     logging.error(f"Erreur parsing volontaire : {e}")
 
-            # Retirer les volontaires absents du dernier broadcast
-            departed = [mac for mac in list(self._volunteers.keys())
-                        if mac not in new_macs]
+            # Retirer les absents du broadcast — SAUF auto-enregistrés TCP
+            # encore actifs (évite le wipe MAC hash bridge ≠ MAC réelle).
+            now = time.time()
+            departed = []
+            for mac in list(self._volunteers.keys()):
+                if mac in new_macs:
+                    continue
+                if mac in self._self_registered:
+                    node = self._volunteers[mac]
+                    if (now - float(node.last_heartbeat or 0.0)) < 180.0:
+                        continue
+                departed.append(mac)
             for mac in departed:
                 gone_node = self._volunteers.pop(mac)
+                self._self_registered.discard(mac)
                 if gone_node.current_ip and gone_node.current_ip in self._ip_to_mac:
                     del self._ip_to_mac[gone_node.current_ip]
                 logging.info(f"Volontaire retiré (absent du broadcast) : {mac}")
@@ -291,12 +354,18 @@ class Manager:
         metadata  = data.get("metadata", {})
 
         with self._vol_lock:
+            if sender_mac_hint:
+                self._ensure_volunteer(sender_mac_hint, sender_ip)
+            if dest_mac_hint:
+                self._ensure_volunteer(dest_mac_hint, dest_ip)
+
             known_macs = list(self._volunteers.keys())
 
             #Résoudre le MAC du destinataire — priorité au MAC explicite
             dest_mac = None
-            if dest_mac_hint and dest_mac_hint in self._volunteers:
-                dest_mac = dest_mac_hint
+            hint = (dest_mac_hint or "").upper() if dest_mac_hint else ""
+            if hint and hint in self._volunteers:
+                dest_mac = hint
             elif dest_ip in self._ip_to_mac:
                 dest_mac = self._ip_to_mac[dest_ip]
             elif dest_ip in self._volunteers:
@@ -314,8 +383,9 @@ class Manager:
 
             #Résoudre le sender — priorité au MAC explicite
             sender_mac = None
-            if sender_mac_hint and sender_mac_hint in self._volunteers:
-                sender_mac = sender_mac_hint
+            shint = (sender_mac_hint or "").upper() if sender_mac_hint else ""
+            if shint and shint in self._volunteers:
+                sender_mac = shint
             elif sender_ip in self._ip_to_mac:
                 sender_mac = self._ip_to_mac[sender_ip]
             elif sender_ip in self._volunteers:
@@ -357,6 +427,8 @@ class Manager:
         )
 
         with self._vol_lock:
+            if data.get("volunteer_mac"):
+                self._ensure_volunteer(data.get("volunteer_mac"), vol_ip)
             vol_mac = self._resolve_mac(candidate)
             # Dernier recours : essayer directement avec l'IP TCP de connexion
             if vol_mac is None and candidate != vol_ip:
@@ -419,6 +491,8 @@ class Manager:
         # Identifier le demandeur
         requester_mac_hint = data.get("volunteer_mac") or data.get("volunteer_ip")
         with self._vol_lock:
+            if data.get("volunteer_mac"):
+                self._ensure_volunteer(data.get("volunteer_mac"), vol_ip)
             requester_mac = (
                 self._resolve_mac(requester_mac_hint) if requester_mac_hint else None
             ) or self._resolve_mac(vol_ip)
