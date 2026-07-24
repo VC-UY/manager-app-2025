@@ -23,18 +23,26 @@ logger.setLevel(logging.DEBUG)
 manager_host = settings.MANAGER_HOST
 
 def get_min_volunteer_resources():
-    """Retourne les ressources du volontaire le plus faible (RAM, CPU)."""
+    """
+    Ressources de référence pour dimensionner les tâches.
+
+    CPU/RAM : plancher basé sur le volontaire le plus faible (pour que
+    les shards tiennent sur le parc).
+    Disque : besoin estimé de la tâche en Go — JAMAIS l'espace libre
+    machine (`disk_gb`), sinon required_resources.disk = 100–500 Go et
+    aucun volontaire avec max_disk_gb raisonnable ne matche.
+    """
     volunteers = Volunteer.objects.all()
     if not volunteers:
         return {
             "min_cpu": 1,
             "min_ram": 512,
-            "disk": 1, # en Go
+            "disk": 1,  # Go — besoin tâche
         }
     return {
-        "min_cpu": min(v.cpu_cores for v in volunteers),
-        "min_ram": min(v.ram_mb for v in volunteers),
-        "disk": min(v.disk_gb for v in volunteers),
+        "min_cpu": max(1, min(int(v.cpu_cores or 1) for v in volunteers)),
+        "min_ram": max(512, min(int(v.ram_mb or 512) for v in volunteers)),
+        "disk": 1,  # Go — besoin tâche (pas free disk)
     }
 
 

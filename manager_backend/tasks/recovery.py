@@ -59,9 +59,18 @@ def recover_pending_and_failed_work(
 ) -> Dict[str, Any]:
     """
     Point d'entrée unique : présence en ligne → libère les assignations mortes,
-    prépare les FAILED, synchronise la file vers le Coordinateur (qui assigne).
+    prépare les FAILED, republie la file vers le Coordinateur (qui assigne).
+
+    Important: utiliser task/created (pas seulement task/status_sync).
+    status_sync refuse FAILED/COMPLETED → PENDING et ignore les tâches
+    absentes du Mongo coordinateur — d'où une file CD vide alors que le
+    Manager a encore des CREATED/PENDING.
     """
-    from tasks.coordinator_sync import publish_assign_request, publish_task_status
+    from tasks.coordinator_sync import (
+        publish_assign_request,
+        publish_tasks_created,
+        publish_workflow_tasks_ready,
+    )
     from tasks.models import TaskStatus
     from volunteers.presence import (
         get_online_volunteers_data,
@@ -98,20 +107,21 @@ def recover_pending_and_failed_work(
             "message": "Aucun volontaire en ligne — tâches conservées en file d'attente.",
         }
 
+    queue_statuses = (TaskStatus.CREATED, TaskStatus.PENDING, TaskStatus.RETRYING)
     synced = 0
     for workflow in workflows:
-        for task in workflow.tasks.filter(status=TaskStatus.CREATED):
-            publish_task_status(
-                workflow,
-                task,
-                message="En file d'attente — assignation coordinateur",
-                clear_assignment=True,
-            )
-            synced += 1
+        queued = list(workflow.tasks.filter(status__in=queue_statuses))
+        if not queued:
+            continue
+        synced += publish_tasks_created(workflow, queued)
+        publish_workflow_tasks_ready(
+            workflow,
+            message="Recovery manager — tâches republiquées pour assignation",
+        )
 
     publish_assign_request(message="Recovery manager — assignation demandée au coordinateur")
     logger.info(
-        "Recovery: %s tâche(s) synchronisée(s), assignation déléguée au coordinateur",
+        "Recovery: %s tâche(s) republiee(s) via task/created, assignation déléguée au coordinateur",
         synced,
     )
 
