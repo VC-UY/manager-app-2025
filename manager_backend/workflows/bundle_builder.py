@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 RUNTIME_META = {"runtime": "vc-uyr", "bundle": True}
 
+# Contrat Ashley : run.sh → écrit dans $vc_OUTPUT (result.txt + progress.txt).
 DEFAULT_RUN_SH = """#!/bin/bash
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -35,6 +36,14 @@ if [ -n "${vc_INPUT:-}" ] && [ -d "$vc_INPUT" ]; then
 fi
 
 __COMMAND__
+
+# Contrat Ashley — fichiers attendus dans vc_OUTPUT
+if [ ! -f "$OUTPUT_DIR/progress.txt" ]; then
+  echo "100" > "$OUTPUT_DIR/progress.txt"
+fi
+if [ ! -f "$OUTPUT_DIR/result.txt" ]; then
+  echo "ok" > "$OUTPUT_DIR/result.txt"
+fi
 """
 
 
